@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Talk to Bro Personally - M0-B Spike",
+  "version": "0.1.0",
+  "description": "Minimal prototype extension for verifying SW watchdog, reconcile recovery, discard/freeze reload, markdown extraction and offscreen clipboard (M0-B Spike).",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms",
+    "offscreen",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "M0-B Spike Runner",
+    "default_popup": "runner.html"
+  }
+}

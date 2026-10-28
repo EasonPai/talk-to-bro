@@ -1,0 +1,109 @@
+{
+  "s5": {
+    "test": "S5",
+    "name": "SW Watchdog, 3-min Survival & Reconcile Recovery",
+    "passed": true,
+    "writeAheadMaintained": true,
+    "submitAttemptCount": 1,
+    "reconcileStatus": "resumed_monitoring",
+    "details": "Reconcile successfully resumed Talk state without duplicate submit (Write-ahead protection verified)."
+  },
+  "s6": {
+    "test": "S6",
+    "name": "Tab Discard / Freeze Recovery & Pinned Tab Reuse",
+    "passed": true,
+    "tabId": 328112572,
+    "reused": true,
+    "spawnedNew": false,
+    "details": "Existing pinned tab was cleanly verified/reused without spawning duplicate tabs."
+  },
+  "s7": {
+    "test": "S7",
+    "name": "Markdown Extraction Fidelity (5 Goldens)",
+    "passed": true,
+    "passedCount": 5,
+    "totalCount": 5,
+    "cases": [
+      {
+        "caseName": "Case 1: Table Comparison",
+        "passed": true,
+        "actualLength": 154,
+        "expectedLength": 154,
+        "diff": null
+      },
+      {
+        "caseName": "Case 2: Nested Lists",
+        "passed": true,
+        "actualLength": 103,
+        "expectedLength": 103,
+        "diff": null
+      },
+      {
+        "caseName": "Case 3: Bold / Italic / Blockquote",
+        "passed": true,
+        "actualLength": 67,
+        "expectedLength": 67,
+        "diff": null
+      },
+      {
+        "caseName": "Case 4: Code Block & Decoration Exclusion",
+        "passed": true,
+        "actualLength": 77,
+        "expectedLength": 77,
+        "diff": null
+      },
+      {
+        "caseName": "Case 5: Citations & Noise Exclusion",
+        "passed": true,
+        "actualLength": 31,
+        "expectedLength": 31,
+        "diff": null
+      }
+    ],
+    "details": "All 5 golden cases (tables, nested lists, bold/italic, code blocks, citations) passed with 100% fidelity."
+  },
+  "s8": {
+    "test": "S8",
+    "name": "Offscreen Document Clipboard Copy (Popup Closed)",
+    "passed": true,
+    "copyResult": {
+      "ok": true,
+      "method": "execCommand"
+    },
+    "details": "Offscreen document successfully wrote text to clipboard and cleanly closed."
+  },
+  "s9": {
+    "test": "S9",
+    "name": "Raw DOM Fixtures Capture & De-identification",
+    "passed": true,
+    "fixtures": [
+      {
+        "fixture": "idle.html",
+        "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/idle.html",
+        "exists": true
+      },
+      {
+        "fixture": "streaming.html",
+        "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/streaming.html",
+        "exists": true
+      },
+      {
+        "fixture": "done.html",
+        "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/done.html",
+        "exists": true
+      },
+      {
+        "fixture": "signed-out.html",
+        "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/signed-out.html",
+        "exists": true
+      },
+      {
+        "fixture": "missing-chat.html",
+        "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/missing-chat.html",
+        "exists": true
+      }
+    ],
+    "details": "All 5 de-identified DOM fixtures (idle, streaming, done, signed-out, missing-chat) exist in tests/fixtures/gemini/."
+  },
+  "allPassed": true
+}

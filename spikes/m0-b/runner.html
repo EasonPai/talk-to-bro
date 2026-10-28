@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>M0-B Spike Test Runner</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      width: 500px;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #90caf9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #333;
+    }
+    .badge.pass { background: #2e7d32; color: #fff; }
+    .badge.fail { background: #c62828; color: #fff; }
+    .badge.pending { background: #f57f17; color: #fff; }
+    .card {
+      background: #252526;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .card-body {
+      font-size: 11px;
+      color: #aaa;
+      line-height: 1.4;
+    }
+    .log-box {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 8px;
+      height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 10px;
+      color: #a5d6a7;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>
+    M0-B Spike Runner
+    <span class="badge" id="suite-status">Ready</span>
+  </h2>
+
+  <div class="card" id="card-s5">
+    <div class="card-header">
+      <span>S5: SW Watchdog、3 分鐘存活與 Reconcile 自癒</span>
+      <span class="badge" id="badge-s5">未測</span>
+    </div>
+    <div class="card-body" id="desc-s5">驗證 Write-ahead 防重複送出與 alarms 狀態機自癒</div>
+  </div>
+
+  <div class="card" id="card-s6">
+    <div class="card-header">
+      <span>S6: 分頁 Discard / Freeze 恢復與釘選重用</span>
+      <span class="badge" id="badge-s6">未測</span>
+    </div>
+    <div class="card-body" id="desc-s6">驗證 discard/freeze 偵測、自動 reload 與重用原釘選分頁</div>
+  </div>
+
+  <div class="card" id="card-s7">
+    <div class="card-header">
+      <span>S7: Markdown 擷取保真度 (5 種結構 Golden 測試)</span>
+      <span class="badge" id="badge-s7">未測</span>
+    </div>
+    <div class="card-body" id="desc-s7">驗證表格、巢狀清單、粗體斜體、代碼塊與引用剔除</div>
+  </div>
+
+  <div class="card" id="card-s8">
+    <div class="card-header">
+      <span>S8: Offscreen Document 剪貼簿操作</span>
+      <span class="badge" id="badge-s8">未測</span>
+    </div>
+    <div class="card-body" id="desc-s8">驗證 Popup 關閉時透過 offscreen 寫入系統剪貼簿並正常關閉</div>
+  </div>
+
+  <div class="card" id="card-s9">
+    <div class="card-header">
+      <span>S9: 去識別化 DOM 治具庫</span>
+      <span class="badge" id="badge-s9">未測</span>
+    </div>
+    <div class="card-body" id="desc-s9">驗證 tests/fixtures/gemini/ 內 5 種 DOM 治具完整就緒</div>
+  </div>
+
+  <div class="log-box" id="logs">M0-B Spike Runner 已就緒。</div>
+
+  <script type="module" src="runner.js"></script>
+</body>
+</html>
