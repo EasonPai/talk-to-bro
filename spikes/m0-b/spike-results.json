@@ -6,61 +6,39 @@
     "writeAheadMaintained": true,
     "submitAttemptCount": 1,
     "reconcileStatus": "resumed_monitoring",
-    "details": "Reconcile successfully resumed Talk state without duplicate submit (Write-ahead protection verified)."
+    "timeoutExpiredStatus": "timed_out_total",
+    "watchdogAlarmRegistered": true,
+    "alarms": [
+      {
+        "name": "ttb-spike-watchdog",
+        "periodInMinutes": 1,
+        "persistAcrossSessions": true,
+        "scheduledTime": 1793229915651.574
+      }
+    ],
+    "details": "Verified Write-ahead duplicate prevention (count=1), 3-min deadline TIMEOUT_TOTAL, and chrome.alarms watchdog registration."
   },
   "s6": {
     "test": "S6",
     "name": "Tab Discard / Freeze Recovery & Pinned Tab Reuse",
     "passed": true,
-    "tabId": 328112572,
+    "tabId": 328112594,
     "reused": true,
     "spawnedNew": false,
-    "details": "Existing pinned tab was cleanly verified/reused without spawning duplicate tabs."
+    "wasDiscardedBefore": true,
+    "recoveredFromDiscard": true,
+    "discardedAfter": false,
+    "fixtureTabsCount": 1,
+    "details": "Tab was genuinely discarded, detected by ensureBroTab, reloaded, and reused without creating duplicate tabs."
   },
   "s7": {
     "test": "S7",
-    "name": "Markdown Extraction Fidelity (5 Goldens)",
+    "name": "Markdown Extraction Fidelity (5 Goldens with Provenance)",
     "passed": true,
-    "passedCount": 5,
-    "totalCount": 5,
-    "cases": [
-      {
-        "caseName": "Case 1: Table Comparison",
-        "passed": true,
-        "actualLength": 154,
-        "expectedLength": 154,
-        "diff": null
-      },
-      {
-        "caseName": "Case 2: Nested Lists",
-        "passed": true,
-        "actualLength": 103,
-        "expectedLength": 103,
-        "diff": null
-      },
-      {
-        "caseName": "Case 3: Bold / Italic / Blockquote",
-        "passed": true,
-        "actualLength": 67,
-        "expectedLength": 67,
-        "diff": null
-      },
-      {
-        "caseName": "Case 4: Code Block & Decoration Exclusion",
-        "passed": true,
-        "actualLength": 77,
-        "expectedLength": 77,
-        "diff": null
-      },
-      {
-        "caseName": "Case 5: Citations & Noise Exclusion",
-        "passed": true,
-        "actualLength": 31,
-        "expectedLength": 31,
-        "diff": null
-      }
-    ],
-    "details": "All 5 golden cases (tables, nested lists, bold/italic, code blocks, citations) passed with 100% fidelity."
+    "provenanceExists": true,
+    "casesPassed": 5,
+    "totalCases": 5,
+    "details": "All 5 golden cases matched 100% with verified PROVENANCE.md documentation."
   },
   "s8": {
     "test": "S8",
@@ -70,40 +48,88 @@
       "ok": true,
       "method": "execCommand"
     },
-    "details": "Offscreen document successfully wrote text to clipboard and cleanly closed."
+    "clipboardReadBackMatched": true,
+    "systemClipboardValue": "meticulous-handoff-1793229888251",
+    "offscreenClosed": true,
+    "details": "System clipboard verified via pbpaste (exact match) and offscreen document cleanly closed."
   },
   "s9": {
     "test": "S9",
-    "name": "Raw DOM Fixtures Capture & De-identification",
+    "name": "Raw DOM Fixtures Capture, Provenance & De-identification",
     "passed": true,
     "fixtures": [
       {
         "fixture": "idle.html",
         "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/idle.html",
-        "exists": true
+        "exists": true,
+        "deidentified": true,
+        "domStructureValid": true,
+        "checks": {
+          "size": 516,
+          "hasEmail": false,
+          "hasUser": false,
+          "hasTokens": false,
+          "domValid": true
+        }
       },
       {
         "fixture": "streaming.html",
         "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/streaming.html",
-        "exists": true
+        "exists": true,
+        "deidentified": true,
+        "domStructureValid": true,
+        "checks": {
+          "size": 827,
+          "hasEmail": false,
+          "hasUser": false,
+          "hasTokens": false,
+          "domValid": true
+        }
       },
       {
         "fixture": "done.html",
         "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/done.html",
-        "exists": true
+        "exists": true,
+        "deidentified": true,
+        "domStructureValid": true,
+        "checks": {
+          "size": 947,
+          "hasEmail": false,
+          "hasUser": false,
+          "hasTokens": false,
+          "domValid": true
+        }
       },
       {
         "fixture": "signed-out.html",
         "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/signed-out.html",
-        "exists": true
+        "exists": true,
+        "deidentified": true,
+        "domStructureValid": true,
+        "checks": {
+          "size": 332,
+          "hasEmail": false,
+          "hasUser": false,
+          "hasTokens": false,
+          "domValid": true
+        }
       },
       {
         "fixture": "missing-chat.html",
         "path": "/Volumes/Extended/Documents/Developments/projects/agentic-development/.worktrees/talk-to-bro-personally-dev/products/talk-to-bro-personally/tests/fixtures/gemini/missing-chat.html",
-        "exists": true
+        "exists": true,
+        "deidentified": true,
+        "domStructureValid": true,
+        "checks": {
+          "size": 320,
+          "hasEmail": false,
+          "hasUser": false,
+          "hasTokens": false,
+          "domValid": true
+        }
       }
     ],
-    "details": "All 5 de-identified DOM fixtures (idle, streaming, done, signed-out, missing-chat) exist in tests/fixtures/gemini/."
+    "details": "All 5 Gemini fixtures verified: 100% de-identified (zero emails/tokens) and valid DOM structure."
   },
   "allPassed": true
 }

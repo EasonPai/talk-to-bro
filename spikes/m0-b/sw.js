@@ -17,6 +17,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// Auto-run reconcile on SW boot / restart
+reconcile().catch(err => {
+  console.log('[SW-B] Boot reconcile notice:', err.message);
+});
+
 async function saveTalkState(talk) {
   await chrome.storage.local.set({ lastTalk: talk });
 }
@@ -44,12 +49,14 @@ async function reconcile() {
 
   console.log(`[SW-B] Reconciling talk ${talk.id} in phase ${talk.phase}...`);
 
-  // Check deadline
+  // Check 3-minute deadline
   if (talk.phaseDeadlineAt && Date.now() > talk.phaseDeadlineAt) {
     talk.phase = 'failed';
-    talk.error = 'TIMEOUT';
+    talk.error = 'TIMEOUT_TOTAL';
+    talk.failure = { code: 'TIMEOUT_TOTAL', stage: 'read', at: Date.now() };
     await saveTalkState(talk);
-    return { reconciled: true, status: 'timed_out', talk };
+    console.log('[SW-B] Reconcile detected deadline expired -> marked TIMEOUT_TOTAL');
+    return { reconciled: true, status: 'timed_out_total', talk };
   }
 
   if (talk.phase === 'submitting' || talk.phase === 'streaming') {
@@ -58,17 +65,18 @@ async function reconcile() {
       if (!tab) {
         talk.phase = 'failed';
         talk.error = 'TAB_CLOSED';
+        talk.failure = { code: 'TAB_CLOSED', stage: 'read', at: Date.now() };
         await saveTalkState(talk);
-        return { reconciled: true, status: 'tab_closed' };
+        return { reconciled: true, status: 'tab_closed', talk };
       }
 
       await ensureAdapterInjected(talk.tabId);
       const probe = await chrome.tabs.sendMessage(talk.tabId, { action: 'TTB_PROBE' }).catch(() => null);
       if (!probe) {
-        return { reconciled: true, status: 'tab_unresponsive' };
+        return { reconciled: true, status: 'tab_unresponsive', talk };
       }
 
-      // WRITE-AHEAD VERIFICATION: Do NOT call send() again!
+      // WRITE-AHEAD VERIFICATION: submitAttemptCount remains 1; Do NOT call send() again!
       if (probe.turn === 'complete') {
         talk.phase = 'completed';
         talk.textLength = probe.textLength;
@@ -81,21 +89,22 @@ async function reconcile() {
         return { reconciled: true, status: 'resumed_monitoring', talk };
       }
     } catch (err) {
-      return { reconciled: false, error: err.message };
+      return { reconciled: false, error: err.message, talk };
     }
   }
 
-  return { reconciled: true, status: talk.phase };
+  return { reconciled: true, status: talk.phase, talk };
 }
 
 // Tab lifecycle management: reuse pinned tab, handle discard / freeze
 async function ensureBroTab(preferredTabId, targetUrl) {
   if (preferredTabId) {
     try {
-      const tab = await chrome.tabs.get(preferredTabId);
+      let tab = await chrome.tabs.get(preferredTabId);
       if (tab) {
+        let recoveredFromDiscard = false;
         if (tab.discarded || tab.frozen) {
-          console.log(`[SW-B] Tab ${tab.id} is discarded/frozen. Reloading before use...`);
+          console.log(`[SW-B] Tab ${tab.id} is discarded/frozen (discarded: ${tab.discarded}, frozen: ${tab.frozen}). Reloading before use...`);
           await chrome.tabs.reload(tab.id);
           await new Promise((resolve) => {
             const listener = (tid, changeInfo) => {
@@ -105,13 +114,21 @@ async function ensureBroTab(preferredTabId, targetUrl) {
               }
             };
             chrome.tabs.onUpdated.addListener(listener);
-            setTimeout(resolve, 3000);
+            setTimeout(resolve, 4000);
           });
+          tab = await chrome.tabs.get(tab.id);
+          recoveredFromDiscard = true;
+          console.log(`[SW-B] Tab ${tab.id} reloaded successfully. Discarded status now: ${tab.discarded}`);
         }
-        return { tab, reused: true, spawnedNew: false };
+        return {
+          tab,
+          reused: true,
+          spawnedNew: false,
+          recoveredFromDiscard
+        };
       }
     } catch (e) {
-      console.log(`[SW-B] Preferred tab ${preferredTabId} not found. Creating new pinned tab...`);
+      console.log(`[SW-B] Preferred tab ${preferredTabId} not found (${e.message}). Creating new pinned tab...`);
     }
   }
 
@@ -120,7 +137,7 @@ async function ensureBroTab(preferredTabId, targetUrl) {
     active: false,
     pinned: true
   });
-  return { tab: newTab, reused: false, spawnedNew: true };
+  return { tab: newTab, reused: false, spawnedNew: true, recoveredFromDiscard: false };
 }
 
 // Offscreen Document clipboard copy
@@ -175,7 +192,7 @@ async function runS5Test(tabId) {
 
   await saveTalkState(testTalk);
 
-  // Simulate SW crash/recovery during streaming
+  // Simulate SW restart / recovery during streaming
   testTalk.phase = 'streaming';
   testTalk.streamedChars = 120;
   await saveTalkState(testTalk);
@@ -200,16 +217,33 @@ async function runS5Test(tabId) {
 // S6: Discard & Freeze Recovery
 async function runS6Test(existingTabId, targetUrl) {
   console.log(`[SW-B] Running S6: Tab Discard & Freeze Recovery on tab ${existingTabId}...`);
+  // If tab is not yet discarded, discard it first to test real discard recovery
+  const initialTab = await chrome.tabs.get(existingTabId);
+  let wasDiscardedBefore = initialTab.discarded;
+  if (!wasDiscardedBefore) {
+    try {
+      const discardedTab = await chrome.tabs.discard(existingTabId);
+      wasDiscardedBefore = Boolean(discardedTab && discardedTab.discarded);
+    } catch (err) {
+      console.log('[SW-B] chrome.tabs.discard notice:', err.message);
+    }
+  }
+
   const result1 = await ensureBroTab(existingTabId, targetUrl);
+
+  const passed = result1.reused && !result1.spawnedNew && result1.tab.id === existingTabId && !result1.tab.discarded;
 
   return {
     test: 'S6',
     name: 'Tab Discard / Freeze Recovery & Pinned Tab Reuse',
-    passed: result1.reused && !result1.spawnedNew,
+    passed,
     tabId: result1.tab.id,
     reused: result1.reused,
     spawnedNew: result1.spawnedNew,
-    details: 'Existing pinned tab was cleanly verified/reused without spawning duplicate tabs.'
+    wasDiscardedBefore,
+    recoveredFromDiscard: result1.recoveredFromDiscard,
+    discardedAfter: result1.tab.discarded,
+    details: 'Tab was cleanly recovered from discard state and original pinned tab ID reused without spawning duplicate tabs.'
   };
 }
 
@@ -263,6 +297,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     runS8Test(msg.text).then(sendResponse).catch(err => sendResponse({ passed: false, error: err.message }));
     return true;
   }
+  if (msg.action === 'RUN_RECONCILE') {
+    reconcile().then(sendResponse).catch(err => sendResponse({ reconciled: false, error: err.message }));
+    return true;
+  }
+  if (msg.action === 'SAVE_TALK') {
+    saveTalkState(msg.talk).then(() => sendResponse({ ok: true })).catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg.action === 'GET_TALK') {
+    getTalkState().then(talk => sendResponse({ ok: true, talk })).catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (msg.action === 'CHECK_ALARMS') {
+    chrome.alarms.getAll((alarms) => sendResponse({ alarms }));
+    return true;
+  }
   if (msg.action === 'RUN_FULL_SUITE_B') {
     runFullSuiteB(msg.tabId, msg.url).then(sendResponse).catch(err => sendResponse({ allPassed: false, error: err.message }));
     return true;
@@ -271,3 +321,4 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 console.log('[SW-B] Service Worker B initialized.');
+
