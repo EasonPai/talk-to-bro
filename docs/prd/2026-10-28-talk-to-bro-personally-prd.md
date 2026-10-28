@@ -1,5 +1,5 @@
 ---
-AI summary: 
+AI summary: []
 Archived: false
 Area/Resource: []
 Complete Date: null
@@ -21,7 +21,7 @@ Sub-item: []
 Title: "[Inspiration] Talk To Bro Personally"
 Type: Inspiration
 URL: null
-URL Base: 
+URL Base: []
 Uni-Ref: []
 Updated: "2026-10-28T12:51:00.000Z"
 Updated (short): 10/28/2026
@@ -49,7 +49,7 @@ Updated (short): 10/28/2026
 <!-- nsync:callout icon="🎙️" color="gray_bg" -->
 > 🎙️ 原話照貼，不改寫。新 Capture 加在最下面，格式：`YYYY-MM-DD · 來源` 後接原文。
 <!-- /nsync:callout -->
-### 2026-10-27 · Android 分享 {toggle="true"}
+### 2026-10-27 · Android 分享<!-- nsync:toggle -->
 	我想有一個Chrome Extension是可以讓我很快的把想查的單字打上去， 然後他會送到Gemini的服務裡面去，使用我在 gemini 定義的 skill。 拿到答案之後，在Extension popup顯示出來 ，這樣我就不用全部手動打開 gemini tab貼上去。
 ## Change Log
 <!-- nsync:callout icon="📝" color="gray_bg" -->
