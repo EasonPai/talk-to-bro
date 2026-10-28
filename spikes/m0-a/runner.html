@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>M0-A Spike Test Runner</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      width: 480px;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      box-sizing: border-box;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #90caf9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #333;
+    }
+    .badge.pass { background: #2e7d32; color: #fff; }
+    .badge.fail { background: #c62828; color: #fff; }
+    .badge.pending { background: #f57f17; color: #fff; }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    button {
+      background: #2b3a4a;
+      color: #90caf9;
+      border: 1px solid #3d566e;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    button:hover { background: #3d566e; color: #fff; }
+    button.primary {
+      grid-column: span 2;
+      background: #1976d2;
+      color: #fff;
+      font-size: 13px;
+      padding: 10px;
+    }
+    button.primary:hover { background: #1565c0; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .card {
+      background: #252526;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .card-body {
+      font-size: 11px;
+      color: #aaa;
+      line-height: 1.4;
+    }
+    .log-box {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 4px;
+      padding: 8px;
+      height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 10px;
+      color: #a5d6a7;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>
+    M0-A Spike Runner
+    <span class="badge" id="suite-status">Ready</span>
+  </h2>
+
+  <div class="btn-group">
+    <button class="primary" id="btn-run-all">▶ 執行全套驗證 (S1 ~ S4)</button>
+    <button id="btn-run-s1">S1: 焦點隔離</button>
+    <button id="btn-run-s2">S2: 背景輸入送出</button>
+    <button id="btn-run-s3">S3: 串流更新閘門</button>
+    <button id="btn-run-s4">S4: 10 次生命週期</button>
+  </div>
+
+  <div class="card" id="card-s1">
+    <div class="card-header">
+      <span>S1: 背景釘選分頁不搶焦點</span>
+      <span class="badge" id="badge-s1">未測</span>
+    </div>
+    <div class="card-body" id="desc-s1">驗證 chrome.tabs.create active:false, pinned:true</div>
+  </div>
+
+  <div class="card" id="card-s2">
+    <div class="card-header">
+      <span>S2: 背景未檢視分頁 DOM 插入與送出</span>
+      <span class="badge" id="badge-s2">未測</span>
+    </div>
+    <div class="card-body" id="desc-s2">驗證 execCommand/InputEvent 插入與 user-query 節點生成</div>
+  </div>
+
+  <div class="card" id="card-s3">
+    <div class="card-header">
+      <span>S3: 隱藏分頁串流 DOM 持續更新 (Go/No-go)</span>
+      <span class="badge" id="badge-s3">未測</span>
+    </div>
+    <div class="card-body" id="desc-s3">背景隱藏中連續採樣 textLength 時間序列</div>
+  </div>
+
+  <div class="card" id="card-s4">
+    <div class="card-header">
+      <span>S4: 模型完成訊號穩定性 (10 次連續對話)</span>
+      <span class="badge" id="badge-s4">未測</span>
+    </div>
+    <div class="card-body" id="desc-s4">驗證 stopButton 與 modelDone 生命週期不提早結算</div>
+  </div>
+
+  <div class="log-box" id="logs">M0-A Spike Runner 已就緒。點選按鈕開始驗證...</div>
+
+  <script src="runner.js"></script>
+</body>
+</html>

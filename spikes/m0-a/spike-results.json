@@ -1,0 +1,188 @@
+{
+  "s1": {
+    "test": "S1",
+    "name": "Background Pinned Tab Focus Isolation",
+    "passed": true,
+    "initialActiveTabId": 328112292,
+    "afterActiveTabId": 328112292,
+    "createdTabId": 328112351,
+    "pinned": true,
+    "active": false,
+    "details": "Active tab was not changed. Focus remained on initial tab."
+  },
+  "s2": {
+    "test": "S2",
+    "name": "Background Input Insertion & User Turn Verification",
+    "passed": true,
+    "sendResult": {
+      "ok": true,
+      "userTurnVerified": true,
+      "timestamp": 1793196314611
+    },
+    "details": "Programmatic insertion succeeded and new user-query verified in background DOM."
+  },
+  "s3": {
+    "test": "S3",
+    "name": "Streaming DOM Updates in Hidden Tab (Go/No-go Gate)",
+    "passed": true,
+    "growthStepCount": 5,
+    "totalSamples": 6,
+    "finalTextLength": 519,
+    "samples": [
+      {
+        "elapsedMs": 0,
+        "textLength": 117,
+        "generating": true,
+        "turn": "streaming",
+        "visibility": "hidden"
+      },
+      {
+        "elapsedMs": 202,
+        "textLength": 167,
+        "generating": true,
+        "turn": "streaming",
+        "visibility": "hidden"
+      },
+      {
+        "elapsedMs": 407,
+        "textLength": 210,
+        "generating": true,
+        "turn": "streaming",
+        "visibility": "hidden"
+      },
+      {
+        "elapsedMs": 609,
+        "textLength": 327,
+        "generating": true,
+        "turn": "streaming",
+        "visibility": "hidden"
+      },
+      {
+        "elapsedMs": 815,
+        "textLength": 439,
+        "generating": true,
+        "turn": "streaming",
+        "visibility": "hidden"
+      },
+      {
+        "elapsedMs": 1021,
+        "textLength": 519,
+        "generating": false,
+        "turn": "complete",
+        "visibility": "hidden"
+      }
+    ],
+    "details": "Streaming DOM updated continuously (5 growth steps observed, final len: 519). rAF/Timer throttling does NOT freeze stream."
+  },
+  "s4": {
+    "test": "S4",
+    "name": "Bro Completion Signal Reliability (10 Runs)",
+    "passed": true,
+    "runsPassed": 10,
+    "totalRuns": 10,
+    "runs": [
+      {
+        "run": 1,
+        "word": "meticulous [run-1]",
+        "passed": true,
+        "t1_generating_ms": 3,
+        "t2_stop_gone_ms": 1096,
+        "t3_model_done_ms": 1096,
+        "finalLength": 431,
+        "durationMs": 1408
+      },
+      {
+        "run": 2,
+        "word": "persistent [run-2]",
+        "passed": true,
+        "t1_generating_ms": 5,
+        "t2_stop_gone_ms": 2830,
+        "t3_model_done_ms": 2830,
+        "finalLength": 431,
+        "durationMs": 3135
+      },
+      {
+        "run": 3,
+        "word": "elaborate [run-3]",
+        "passed": true,
+        "t1_generating_ms": 16,
+        "t2_stop_gone_ms": 1049,
+        "t3_model_done_ms": 1049,
+        "finalLength": 430,
+        "durationMs": 1357
+      },
+      {
+        "run": 4,
+        "word": "profound [run-4]",
+        "passed": true,
+        "t1_generating_ms": 3,
+        "t2_stop_gone_ms": 2719,
+        "t3_model_done_ms": 2719,
+        "finalLength": 429,
+        "durationMs": 3027
+      },
+      {
+        "run": 5,
+        "word": "ubiquitous [run-5]",
+        "passed": true,
+        "t1_generating_ms": 2,
+        "t2_stop_gone_ms": 2129,
+        "t3_model_done_ms": 2129,
+        "finalLength": 431,
+        "durationMs": 2441
+      },
+      {
+        "run": 6,
+        "word": "resilient [run-6]",
+        "passed": true,
+        "t1_generating_ms": 4,
+        "t2_stop_gone_ms": 1375,
+        "t3_model_done_ms": 1375,
+        "finalLength": 430,
+        "durationMs": 1677
+      },
+      {
+        "run": 7,
+        "word": "versatile [run-7]",
+        "passed": true,
+        "t1_generating_ms": 4,
+        "t2_stop_gone_ms": 1181,
+        "t3_model_done_ms": 1181,
+        "finalLength": 430,
+        "durationMs": 1489
+      },
+      {
+        "run": 8,
+        "word": "subtle [run-8]",
+        "passed": true,
+        "t1_generating_ms": 3,
+        "t2_stop_gone_ms": 2829,
+        "t3_model_done_ms": 2829,
+        "finalLength": 427,
+        "durationMs": 3308
+      },
+      {
+        "run": 9,
+        "word": "coherent [run-9]",
+        "passed": true,
+        "t1_generating_ms": 3,
+        "t2_stop_gone_ms": 1089,
+        "t3_model_done_ms": 1089,
+        "finalLength": 429,
+        "durationMs": 1397
+      },
+      {
+        "run": 10,
+        "word": "pragmatic [run-10]",
+        "passed": true,
+        "t1_generating_ms": 5,
+        "t2_stop_gone_ms": 1859,
+        "t3_model_done_ms": 1859,
+        "finalLength": 431,
+        "durationMs": 2632
+      }
+    ],
+    "details": "All 10 consecutive runs observed correct generating -> stopButton -> modelDone lifecycle without premature completion."
+  },
+  "allPassed": true
+}

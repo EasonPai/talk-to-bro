@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Talk to Bro Personally - M0-A Spike",
+  "version": "0.1.0",
+  "description": "Minimal prototype extension for verifying background tab behaviors, DOM insertion, streaming updates and completion signals (M0-A Spike).",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "M0-A Spike Runner",
+    "default_popup": "runner.html"
+  }
+}
