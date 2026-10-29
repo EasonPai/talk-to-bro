@@ -20,6 +20,7 @@ import {
 } from '../shared/storage.ts';
 import { createTalk, transition, phaseDeadlineOf, stageOf } from '../shared/talk-machine.ts';
 import { evaluateTick, TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
+import { validateBroChatUrl } from '../shared/validate.ts';
 import { reconcile } from './reconcile.ts';
 import { getBootReadyPromise, type BootResult } from './boot.ts';
 
@@ -114,7 +115,8 @@ export class TalkRunner {
       const runtime = await getRuntimeStorage(this.storageLocal);
       let talk = runtime.lastTalk;
       if (!talk || talk.id !== talkId || talk.phase !== 'queued') return;
-      talk = transition(talk, { type: 'TAB_RESOLVED', tabId: 1001 }, this.now());
+      const initialTabId = (this.adapter as any).getActiveTabId?.() || 1;
+      talk = transition(talk, { type: 'TAB_RESOLVED', tabId: initialTabId }, this.now());
       if (talk.phase === 'failed') {
         await finalizeTerminalTalk(this.storageLocal, talk, this.now());
         this.alarms?.clear('ttb-watchdog');
@@ -126,7 +128,10 @@ export class TalkRunner {
     // Step 3: checkReady outside mutex (bounded call)
     let ready: ReadyResult;
     try {
-      ready = await this.adapter.checkReady({ chatId: 'mock-chat', text });
+      const settings = await getSettingsStorage(this.storageLocal);
+      const chatRef = settings.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
+      const chatId = chatRef ? chatRef.chatId : '';
+      ready = await this.adapter.checkReady({ chatId, text });
     } catch (e) {
       ready = { ok: false, code: 'INTERNAL' as const };
     }
@@ -136,6 +141,11 @@ export class TalkRunner {
       const runtime = await getRuntimeStorage(this.storageLocal);
       let talk = runtime.lastTalk;
       if (!talk || talk.id !== talkId || talk.phase !== 'sending') return talk;
+
+      const actualTabId = (this.adapter as any).getActiveTabId?.() || talk.tabId;
+      if (actualTabId && actualTabId !== talk.tabId) {
+        talk = { ...talk, tabId: actualTabId };
+      }
 
       if (!ready.ok) {
         talk = transition(talk, { type: 'FAIL', code: ready.code }, this.now());
@@ -418,7 +428,8 @@ export class TalkRunner {
         const runtime = await getRuntimeStorage(this.storageLocal);
         let talk = runtime.lastTalk;
         if (!talk || (talk.phase !== 'queued' && talk.phase !== 'resolving_tab')) return;
-        talk = transition(talk, { type: 'TAB_RESOLVED', tabId: 1001 }, this.now());
+        const initialTabId = (this.adapter as any).getActiveTabId?.() || talk.tabId || 1;
+        talk = transition(talk, { type: 'TAB_RESOLVED', tabId: initialTabId }, this.now());
         if (talk.phase === 'failed') {
           await finalizeTerminalTalk(this.storageLocal, talk, this.now());
           this.alarms?.clear('ttb-watchdog');
@@ -433,7 +444,10 @@ export class TalkRunner {
       if (talk && talk.phase === 'sending') {
         let ready: ReadyResult;
         try {
-          ready = await this.adapter.checkReady({ chatId: 'mock-chat', text: talk.text });
+          const settings = await getSettingsStorage(this.storageLocal);
+          const chatRef = settings.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
+          const chatId = chatRef ? chatRef.chatId : '';
+          ready = await this.adapter.checkReady({ chatId, text: talk.text });
         } catch (e) {
           ready = { ok: false, code: 'INTERNAL' as const };
         }
@@ -441,6 +455,11 @@ export class TalkRunner {
         const advancedToSubmitting = await this.mutex.run(async () => {
           let t = (await getRuntimeStorage(this.storageLocal)).lastTalk;
           if (!t || t.id !== talk.id || t.phase !== 'sending') return false;
+
+          const actualTabId = (this.adapter as any).getActiveTabId?.() || t.tabId;
+          if (actualTabId && actualTabId !== t.tabId) {
+            t = { ...t, tabId: actualTabId };
+          }
 
           if (!ready.ok) {
             t = transition(t, { type: 'FAIL', code: ready.code }, this.now());

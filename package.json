@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --experimental-test-coverage --test 'tests/unit/**/*.test.*'",
-    "verify": "node scripts/test-m1-suite.js"
+    "verify": "node scripts/test-m1-suite.js",
+    "verify:m3": "node scripts/test-m3-suite.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.306",

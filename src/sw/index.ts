@@ -2,44 +2,30 @@
 // Background Service Worker for Talk To Bro Personally (MV3)
 import { getBootReadyPromise } from './boot.ts';
 import { TalkRunner } from './runner.ts';
-import { getRuntimeStorage } from '../shared/storage.ts';
+import { getRuntimeStorage, getSettingsStorage } from '../shared/storage.ts';
 import { computeStats } from '../shared/stats.ts';
-import type { BroAdapter, ReadyResult, SendResult, ProbeResult, ExtractResult } from '../shared/types.ts';
+import { RealBroAdapter } from './adapter-real.ts';
 
 const ALARM_NAME = 'ttb-watchdog';
 
-// Minimal placeholder adapter for SW runtime until M3 brings real DOM adapter
-const defaultAdapter: BroAdapter = {
-  async checkReady() {
-    return { ok: true, editorHasOwnText: false };
+// Real Bro Adapter connected to background Gemini tab and on-demand injected content script
+const realAdapter = new RealBroAdapter({
+  getTargetUrl: async () => {
+    try {
+      const settings = await getSettingsStorage(chrome.storage?.local);
+      return settings.broChatUrl;
+    } catch {
+      return null;
+    }
   },
-  async send() {
-    return { ok: true };
-  },
-  async probe() {
-    return {
-      page: 'ready',
-      turn: 'complete',
-      generating: false,
-      textLength: 0,
-      textSig: '0:00000000',
-      quota: false
-    };
-  },
-  async extract() {
-    return { markdown: '' };
-  },
-  async selfCheck() {
-    return {};
-  },
-  async showHandoffNotice() {}
-};
+  storageSession: chrome.storage?.session
+});
 
 // Singleton runner instance in SW
 const runner = new TalkRunner({
   storageLocal: chrome.storage?.local,
   storageSession: chrome.storage?.session,
-  adapter: defaultAdapter,
+  adapter: realAdapter,
   alarms: chrome.alarms
 });
 
