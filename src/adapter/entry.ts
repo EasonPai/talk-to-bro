@@ -2,6 +2,7 @@
 // Bro Adapter IIFE Entrypoint (injected on-demand into ISOLATED world)
 import { queryOne, queryAll } from './selectors.ts';
 import { validateBroChatUrl } from '../shared/validate.ts';
+import { htmlToMarkdown } from './html-to-md.ts';
 
 declare const __TTB_BUILD_ID__: string;
 export const BUILD_ID = typeof __TTB_BUILD_ID__ !== 'undefined' ? __TTB_BUILD_ID__ : 'ttb-build-0.1.0-dev';
@@ -225,7 +226,7 @@ export function probe() {
 }
 
 /**
- * Extracts raw HTML answer from model body.
+ * Extracts and converts model body HTML to high-fidelity Markdown.
  */
 export function extract() {
   const modelTurns = queryAll('modelTurn');
@@ -237,7 +238,9 @@ export function extract() {
   }
 
   const body = queryOne('modelBody', activeModelTurn) || activeModelTurn;
-  return { markdown: body.textContent || '', html: body.innerHTML || '' };
+  const rawHtml = body.innerHTML || '';
+  const markdown = htmlToMarkdown(body as HTMLElement);
+  return { markdown, html: rawHtml };
 }
 
 // Runtime IIFE Initialization in Browser / ISOLATED World

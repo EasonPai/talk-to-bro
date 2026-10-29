@@ -151,18 +151,118 @@ textarea::placeholder {
   font-size: 10px;
   padding: 2px 6px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .copy-btn:hover {
   background: #373b45;
 }
 
+.copy-btn.copied {
+  background: #2e7d32;
+  border-color: #4caf50;
+  color: #fff;
+}
+
 .answer-content {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-main);
-  max-height: 200px;
+  max-height: 240px;
   overflow-y: auto;
+  word-break: break-word;
+}
+
+/* Markdown typography inside answer-content */
+.answer-content p {
+  margin: 0.4em 0;
+}
+
+.answer-content h1,
+.answer-content h2,
+.answer-content h3,
+.answer-content h4,
+.answer-content h5,
+.answer-content h6 {
+  margin: 0.6em 0 0.2em 0;
+  color: #fff;
+  font-weight: 600;
+}
+
+.answer-content h1 { font-size: 15px; }
+.answer-content h2 { font-size: 14px; }
+.answer-content h3 { font-size: 13px; }
+
+.answer-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.answer-content th,
+.answer-content td {
+  border: 1px solid var(--border-color);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.answer-content th {
+  background: #252830;
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.answer-content pre {
+  background: #18191d;
+  border: 1px solid #282a30;
+  border-radius: 6px;
+  padding: 8px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.answer-content code {
+  background: #252830;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #8ab4f8;
+}
+
+.answer-content pre code {
+  background: transparent;
+  padding: 0;
+  color: #e6e8eb;
+  font-size: 11px;
+}
+
+.answer-content blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--accent-color);
+  background: rgba(138, 180, 248, 0.08);
+  color: var(--text-muted);
+}
+
+.answer-content ul,
+.answer-content ol {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.answer-content li {
+  margin: 2px 0;
+}
+
+.answer-content a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.answer-content a:hover {
+  text-decoration: underline;
 }
 
 .popup-footer {
