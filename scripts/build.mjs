@@ -30,7 +30,8 @@ async function build() {
     minify: false
   });
 
-  // 2. Adapter (IIFE for isolated world injection)
+  // 2. Adapter (IIFE for isolated world injection with dynamic build ID)
+  const adapterBuildId = `ttb-build-${Date.now()}`;
   await esbuild.build({
     entryPoints: [path.join(SRC_DIR, 'adapter/entry.ts')],
     outfile: path.join(DIST_DIR, 'adapter.js'),
@@ -38,7 +39,10 @@ async function build() {
     format: 'iife',
     target: 'chrome132',
     sourcemap: true,
-    minify: false
+    minify: false,
+    define: {
+      '__TTB_BUILD_ID__': JSON.stringify(adapterBuildId)
+    }
   });
 
   // 3. Popup (ESM)

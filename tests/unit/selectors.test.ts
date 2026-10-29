@@ -56,3 +56,28 @@ test('DOM Selectors - queryOne and queryAll fallback behavior in mock DOM', () =
   const primaryFound = queryOne('editor', mockNode);
   assert.equal((primaryFound as any).id, 'primary-editor');
 });
+
+test('DOM Normalization - NFC and newline equality preserves distinct spaces, tabs and detects empty drafts', async () => {
+  const { normalizeText, isDraftEmpty } = await import('../../src/adapter/entry.ts');
+
+  // Spaces and tabs must NOT be collapsed
+  assert.notEqual(normalizeText('a  b'), normalizeText('a b'), 'Distinct double space must not equal single space');
+  assert.notEqual(normalizeText('a\tb'), normalizeText('a b'), 'Tab must not equal space');
+  assert.notEqual(normalizeText('  start space'), normalizeText('start space'), 'Leading space must not be stripped');
+
+  // Newlines must be normalized (\r\n -> \n, \r -> \n)
+  assert.equal(normalizeText('line1\r\nline2'), normalizeText('line1\nline2'));
+  assert.equal(normalizeText('line1\rline2'), normalizeText('line1\nline2'));
+
+  // NFC Unicode normalization
+  assert.equal(normalizeText('e\u0301'), normalizeText('\u00e9'));
+
+  // Separate isDraftEmpty checks
+  assert.equal(isDraftEmpty(''), true);
+  assert.equal(isDraftEmpty('   '), true);
+  assert.equal(isDraftEmpty('\n\t  '), true);
+  assert.equal(isDraftEmpty(null), true);
+  assert.equal(isDraftEmpty(undefined), true);
+  assert.equal(isDraftEmpty('hello'), false);
+  assert.equal(isDraftEmpty(' a '), false);
+});

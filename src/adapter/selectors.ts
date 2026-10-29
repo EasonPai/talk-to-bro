@@ -38,6 +38,7 @@ export const SELECTORS: DomSelectors = {
     '[data-turn-type="user"]'
   ],
   userTurnText: [
+    '.query-text-line',
     '.query-text',
     'user-query-content',
     '.query-content'

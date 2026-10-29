@@ -68,7 +68,7 @@ export class RealBroAdapter implements BroAdapter {
         return true;
       }
     } catch {
-      // Ping failed, adapter not yet injected
+      // Ping failed, adapter not yet injected or old stub unresponsive
     }
 
     // 2. On-demand injection into ISOLATED world
@@ -83,7 +83,13 @@ export class RealBroAdapter implements BroAdapter {
         files: ['adapter.js'],
         world: 'ISOLATED' as any
       });
-      return true;
+      // 3. Verify ping & handler readiness immediately after injection
+      try {
+        const verifyPing = await this.sendMsg(tabId, { action: 'TTB_PING' });
+        return Boolean(verifyPing && verifyPing.ok);
+      } catch {
+        return false;
+      }
     } catch {
       return false;
     }
