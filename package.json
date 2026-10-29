@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/unit/*.test.js tests/unit/*.test.mjs",
+    "test": "node --experimental-test-coverage --test 'tests/unit/**/*.test.*'",
     "verify": "node scripts/test-m1-suite.js"
   },
   "devDependencies": {
