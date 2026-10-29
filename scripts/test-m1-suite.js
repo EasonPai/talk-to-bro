@@ -1,5 +1,5 @@
 // scripts/test-m1-suite.js
-// Automated Verification Suite for Ticket 03 (#27: M1 - Skeleton, Manifest V3 & Options Validation)
+// Automated End-to-End Verification Harness for Ticket 03 (#27: M1)
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
+const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
 
 const CDP_HOST = '[::1]';
 const CDP_PORT = 9222;
@@ -54,7 +55,7 @@ class CdpClient {
 
 async function main() {
   console.log('================================================================');
-  console.log('    Ticket 03 (#27: M1) Automated Verification Suite            ');
+  console.log('    Ticket 03 (#27: M1) Rigorous Verification Suite             ');
   console.log('================================================================\n');
 
   // 1. Manifest V3 Integrity Verification
@@ -120,62 +121,203 @@ async function main() {
   assert.equal(validateBroChatUrl('https://gemini.google.com/').valid, false);
   console.log('  ✓ validateBroChatUrl boundary assertions passed.\n');
 
-  // 4. Live Chrome for Testing Integration (Active Browser Environment)
-  console.log('[Test Suite] 4. Verifying active Chrome for Testing environment & storage integration...');
-  const verRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/version`);
-  const verData = await verRes.json();
-  console.log(`  [CfT] Browser Version: ${verData.Browser}`);
+  // 4. Mount dist safely for active CfT session testing
+  console.log('[Test Suite] 4. Safely synchronizing dist bundle to active CfT extension path...');
+  const backupDir = path.join(ROOT_DIR, 'spikes/m0-b-backup-tmp');
+  if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
+  fs.cpSync(LOADED_EXT_DIR, backupDir, { recursive: true });
 
-  // Query active targets to locate extension runner / pages
-  const targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
-  const runnerTarget = targets.find(t => t.url && t.url.includes('runner.html')) || targets.find(t => t.type === 'page');
-  assert.ok(runnerTarget, 'Active browser page target must be available');
+  try {
+    for (const file of fs.readdirSync(DIST_DIR)) {
+      fs.copyFileSync(path.join(DIST_DIR, file), path.join(LOADED_EXT_DIR, file));
+    }
 
-  const cdp = new CdpClient(runnerTarget.webSocketDebuggerUrl);
-  await cdp.connect();
+    const verRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/version`);
+    const verData = await verRes.json();
+    console.log(`  [CfT] Browser: ${verData.Browser}`);
 
-  // Test Settings Storage persistence in active browser profile
-  console.log('[Test Suite] 5. Verifying settings:v1 persistence in Chrome storage...');
-  const testSettings = {
-    broChatUrl: 'https://gemini.google.com/app/4d870f290f0c5975',
-    updatedAt: Date.now()
-  };
+    let targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+    let swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes('chrome-extension://'));
+    assert.ok(swTarget, 'Active extension service worker must be running');
 
-  const storageWriteEval = await cdp.send('Runtime.evaluate', {
-    expression: `
-      (async () => {
-        await chrome.storage.local.set({ 'settings:v1': ${JSON.stringify(testSettings)} });
-        const res = await chrome.storage.local.get('settings:v1');
-        return res['settings:v1'];
-      })()
-    `,
-    awaitPromise: true,
-    returnByValue: true
-  });
+    const extUrlMatch = swTarget.url.match(/chrome-extension:\/\/([a-z0-9]+)\//);
+    const activeExtId = extUrlMatch ? extUrlMatch[1] : null;
+    assert.ok(activeExtId, 'Active extension ID must be extracted');
+    console.log(`  [CfT] Target Extension ID: ${activeExtId}`);
 
-  const storedResult = storageWriteEval.result?.value;
-  assert.equal(storedResult?.broChatUrl, testSettings.broChatUrl, 'settings:v1 broChatUrl must match');
-  console.log(`  ✓ settings:v1 write & read-back verified in Chrome local storage (${storedResult.broChatUrl}).\n`);
+    // Reload service worker to ensure latest dist bundle is mounted
+    const swCdp = new CdpClient(swTarget.webSocketDebuggerUrl);
+    await swCdp.connect();
+    await swCdp.send('Runtime.evaluate', { expression: 'chrome.runtime.reload()' });
+    swCdp.close();
+    await new Promise(r => setTimeout(r, 1000));
 
-  // Test Popup Autofocus (F1) DOM semantics
-  console.log('[Test Suite] 6. Verifying Popup DOM structure & Autofocus (F1) attributes...');
-  const popupHtml = fs.readFileSync(path.join(DIST_DIR, 'popup.html'), 'utf-8');
-  assert.ok(popupHtml.includes('id="talk-input"'), 'popup.html must contain #talk-input');
-  assert.ok(popupHtml.includes('autofocus'), 'popup.html textarea must have autofocus attribute');
-  assert.ok(popupHtml.includes('Alt'), 'popup.html must display Alt+Shift+B shortcut badge');
+    // Verify commands registration in SW
+    targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+    swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(activeExtId));
+    assert.ok(swTarget, 'Service worker must reboot after reload');
 
-  const popupJs = fs.readFileSync(path.join(DIST_DIR, 'popup.js'), 'utf-8');
-  assert.ok(popupJs.includes('.focus()'), 'popup.js must explicitly invoke focus() on talk-input');
-  console.log('  ✓ Popup autofocus and shortcut semantics verified.\n');
+    const swCdp2 = new CdpClient(swTarget.webSocketDebuggerUrl);
+    await swCdp2.connect();
+    const cmdsEval = await swCdp2.send('Runtime.evaluate', {
+      expression: `(async () => { return await chrome.commands.getAll(); })()`,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    const cmds = cmdsEval.result?.value || [];
+    swCdp2.close();
 
-  cdp.close();
+    const shortcutRegistered = cmds.some(c => c.name === '_execute_action' && (c.shortcut?.includes('B') || c.shortcut?.includes('⇧')));
+    assert.equal(shortcutRegistered, true, 'Alt+Shift+B shortcut command must be registered in Chrome');
+    console.log(`  ✓ Shortcut command _execute_action registered: ${JSON.stringify(cmds)}`);
 
-  console.log('================================================================');
-  console.log('       ALL ACCEPTANCE CRITERIA FOR TICKET 03 (#27) PASSED       ');
-  console.log('================================================================\n');
+    // 5. Options UI Real End-to-End Verification (Input, Rejection, Save, Persistence)
+    console.log('\n[Test Suite] 5. Verifying Options Page UI & settings:v1 persistence...');
+    const optionsUrl = `chrome-extension://${activeExtId}/options.html`;
+    const optTabRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(optionsUrl)}`, { method: 'PUT' });
+    const optTab = await optTabRes.json();
+
+    const optCdp = new CdpClient(optTab.webSocketDebuggerUrl);
+    await optCdp.connect();
+    await new Promise(r => setTimeout(r, 600));
+
+    // Verify Options DOM
+    const optTitle = await optCdp.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+    assert.equal(optTitle.result.value, 'Talk To Bro Personally - Options', 'Options title must match');
+
+    // Case 5A: Evil URL Rejection via UI
+    console.log('  Testing Evil URL input & rejection in Options UI...');
+    const evilUrl = 'https://gemini.google.com.evil.com/app/spoof';
+    const evilEval = await optCdp.send('Runtime.evaluate', {
+      expression: `
+        (async () => {
+          const input = document.getElementById('bro-url-input');
+          const saveBtn = document.getElementById('save-btn');
+          const status = document.getElementById('url-status');
+
+          input.value = '${evilUrl}';
+          input.dispatchEvent(new Event('input'));
+          saveBtn.click();
+          await new Promise(r => setTimeout(r, 200));
+
+          const stored = await chrome.storage.local.get('settings:v1');
+          return {
+            statusText: status.textContent,
+            isError: status.classList.contains('error'),
+            storedBroChatUrl: stored['settings:v1']?.broChatUrl || null
+          };
+        })()
+      `,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    const evilRes = evilEval.result.value;
+    assert.equal(evilRes.isError, true, 'Evil URL must trigger error in UI');
+    assert.notEqual(evilRes.storedBroChatUrl, evilUrl, 'Evil URL must not be saved into storage');
+    console.log(`  ✓ Evil URL correctly rejected by UI: "${evilRes.statusText}"`);
+
+    // Case 5B: Valid URL Normalization & Storage Save via UI
+    console.log('  Testing Valid URL save in Options UI...');
+    const validUrl = 'https://gemini.google.com/app/4d870f290f0c5975';
+    const saveEval = await optCdp.send('Runtime.evaluate', {
+      expression: `
+        (async () => {
+          const input = document.getElementById('bro-url-input');
+          const saveBtn = document.getElementById('save-btn');
+          const status = document.getElementById('url-status');
+
+          input.value = '${validUrl}';
+          input.dispatchEvent(new Event('input'));
+          saveBtn.click();
+          await new Promise(r => setTimeout(r, 300));
+
+          const stored = await chrome.storage.local.get('settings:v1');
+          return {
+            statusText: status.textContent,
+            isSuccess: status.classList.contains('success'),
+            storedUrl: stored['settings:v1']?.broChatUrl
+          };
+        })()
+      `,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    const saveRes = saveEval.result.value;
+    assert.equal(saveRes.isSuccess, true, 'Valid URL save must show success status');
+    assert.equal(saveRes.storedUrl, validUrl, 'Valid URL must be persisted to settings:v1 in storage');
+    console.log(`  ✓ Valid URL persisted to settings:v1: "${saveRes.storedUrl}"`);
+
+    // Case 5C: Reload Options Page & Verify Settings Auto-Restoration
+    console.log('  Reloading Options Page to verify persistent state restoration...');
+    await optCdp.send('Page.reload');
+    await new Promise(r => setTimeout(r, 600));
+
+    const restoreEval = await optCdp.send('Runtime.evaluate', {
+      expression: `
+        (async () => {
+          const input = document.getElementById('bro-url-input');
+          const status = document.getElementById('url-status');
+          return {
+            inputValue: input.value,
+            statusText: status.textContent
+          };
+        })()
+      `,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    const restoreRes = restoreEval.result.value;
+    assert.equal(restoreRes.inputValue, validUrl, 'Options input must restore saved URL on reload');
+    console.log(`  ✓ Options page auto-restores saved URL on load: "${restoreRes.inputValue}"`);
+
+    await optCdp.send('Runtime.evaluate', { expression: 'window.close()' });
+    optCdp.close();
+
+    // 6. Popup Autofocus (F1) Real Runtime Verification
+    console.log('\n[Test Suite] 6. Verifying Popup Autofocus (F1) in active browser context...');
+    const popupUrl = `chrome-extension://${activeExtId}/popup.html`;
+    const popupTabRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(popupUrl)}`, { method: 'PUT' });
+    const popupTab = await popupTabRes.json();
+
+    const popupCdp = new CdpClient(popupTab.webSocketDebuggerUrl);
+    await popupCdp.connect();
+    await new Promise(r => setTimeout(r, 600));
+
+    const focusEval = await popupCdp.send('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const active = document.activeElement;
+          return {
+            activeId: active ? active.id : null,
+            activeTag: active ? active.tagName.toLowerCase() : null,
+            isTalkInput: Boolean(active && active.id === 'talk-input')
+          };
+        })()
+      `,
+      returnByValue: true
+    });
+    const focusRes = focusEval.result.value;
+    assert.equal(focusRes.isTalkInput, true, 'document.activeElement.id must strictly be "talk-input"');
+    console.log(`  ✓ Popup opened: document.activeElement is <${focusRes.activeTag} id="${focusRes.activeId}"> (Autofocus F1 Confirmed)`);
+
+    await popupCdp.send('Runtime.evaluate', { expression: 'window.close()' });
+    popupCdp.close();
+
+    console.log('\n================================================================');
+    console.log('       ALL ACCEPTANCE CRITERIA FOR TICKET 03 (#27) PASSED       ');
+    console.log('================================================================\n');
+  } finally {
+    // Clean restore of m0-b directory
+    if (fs.existsSync(backupDir)) {
+      fs.rmSync(LOADED_EXT_DIR, { recursive: true, force: true });
+      fs.cpSync(backupDir, LOADED_EXT_DIR, { recursive: true });
+      fs.rmSync(backupDir, { recursive: true, force: true });
+      console.log('[Test Suite] Cleaned up temporary test mount; restored spikes/m0-b.');
+    }
+  }
 }
 
 main().catch((err) => {
-  console.error('[Verification Failed]', err);
+  console.error('\n[Verification Failed]', err);
   process.exit(1);
 });
