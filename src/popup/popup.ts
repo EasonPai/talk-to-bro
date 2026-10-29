@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Talk } from '../shared/types.ts';
 import { getFailureInfo } from '../shared/failures.ts';
+import { followActiveTabZoom } from './zoom.ts';
 
 // Configure marked with GFM support
 marked.setOptions({
@@ -237,6 +238,7 @@ export function renderTalkState(talk: Talk | null) {
  */
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    followActiveTabZoom(document.documentElement).catch(() => {});
     const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
     const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
     const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement | null;
