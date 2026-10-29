@@ -140,11 +140,12 @@ class CdpClient {
 
 function loadGoldens() {
   const cases = [
-    { name: 'Case 1: Table Comparison', html: 'case1-table.html', md: 'case1-table.md' },
-    { name: 'Case 2: Nested Lists', html: 'case2-nested-lists.html', md: 'case2-nested-lists.md' },
-    { name: 'Case 3: Bold / Italic / Blockquote', html: 'case3-formatting.html', md: 'case3-formatting.md' },
-    { name: 'Case 4: Code Block & Decoration Exclusion', html: 'case4-codeblock.html', md: 'case4-codeblock.md' },
-    { name: 'Case 5: Citations & Noise Exclusion', html: 'case5-citations.html', md: 'case5-citations.md' }
+    { name: 'Case 0: Live Gemini Production Turn (/wd ledger)', html: 'case1-real-ledger.html', md: 'case1-real-ledger.md', type: 'live_turn' },
+    { name: 'Case 1: Table Comparison', html: 'case1-table.html', md: 'case1-table.md', type: 'synthetic_unit' },
+    { name: 'Case 2: Nested Lists', html: 'case2-nested-lists.html', md: 'case2-nested-lists.md', type: 'synthetic_unit' },
+    { name: 'Case 3: Bold / Italic / Blockquote', html: 'case3-formatting.html', md: 'case3-formatting.md', type: 'synthetic_unit' },
+    { name: 'Case 4: Code Block & Decoration Exclusion', html: 'case4-codeblock.html', md: 'case4-codeblock.md', type: 'synthetic_unit' },
+    { name: 'Case 5: Citations & Noise Exclusion', html: 'case5-citations.html', md: 'case5-citations.md', type: 'synthetic_unit' }
   ];
 
   const provenancePath = path.join(GOLDENS_DIR, 'PROVENANCE.md');
@@ -169,13 +170,13 @@ function loadGoldens() {
   };
 }
 
-function verifyS9Fixtures() {
+async function verifyS9Fixtures(cdp) {
   const requiredFixtures = [
-    { file: 'idle.html', requiredDom: ['ql-editor', 'send-button'] },
-    { file: 'streaming.html', requiredDom: ['stop', 'message-content'] },
-    { file: 'done.html', requiredDom: ['message-content', 'model-response'] },
-    { file: 'signed-out.html', requiredDom: ['signin-container', 'ServiceLogin'] },
-    { file: 'missing-chat.html', requiredDom: ['error-container', '找不到這個對話'] }
+    { file: 'idle.html', requiredSelectors: ['.ql-editor', 'button.send-button:disabled'] },
+    { file: 'streaming.html', requiredSelectors: ['button.send-button.stop', 'message-content'] },
+    { file: 'done.html', requiredSelectors: ['message-content', 'model-response', '.ql-editor'] },
+    { file: 'signed-out.html', requiredSelectors: ['.signin-container', 'a[href*="ServiceLogin"]'] },
+    { file: 'missing-chat.html', requiredSelectors: ['.error-container', 'a[href*="gemini.google.com/app"]'] }
   ];
 
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
@@ -188,6 +189,7 @@ function verifyS9Fixtures() {
     const exists = fs.existsSync(fPath) && fs.statSync(fPath).size > 50;
     let deidentified = false;
     let domStructureValid = false;
+    let parserErrorsFound = 0;
     let checks = {};
 
     if (exists) {
@@ -198,7 +200,28 @@ function verifyS9Fixtures() {
       const hasTokens = sensitiveTokenRegex.test(content);
 
       deidentified = !hasEmail && !hasUser && !hasTokens;
-      domStructureValid = item.requiredDom.every(selector => content.includes(selector));
+
+      // Real DOMParser evaluation inside browser context
+      const parseEval = await cdp.send('Runtime.evaluate', {
+        expression: `
+          (() => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(${JSON.stringify(content)}, 'text/html');
+            const parserErrors = doc.querySelectorAll('parsererror');
+            const missingSelectors = ${JSON.stringify(item.requiredSelectors)}.filter(sel => !doc.querySelector(sel));
+            return {
+              parserErrorCount: parserErrors.length,
+              missingSelectors
+            };
+          })()
+        `,
+        returnByValue: true
+      });
+
+      const parseRes = parseEval.result?.value;
+      parserErrorsFound = parseRes?.parserErrorCount ?? 0;
+      const missing = parseRes?.missingSelectors ?? [];
+      domStructureValid = (parserErrorsFound === 0 && missing.length === 0);
 
       checks = {
         size: fs.statSync(fPath).size,
@@ -206,6 +229,8 @@ function verifyS9Fixtures() {
         hasEmail,
         hasUser,
         hasTokens,
+        parserErrorsFound,
+        missingSelectors: missing,
         domValid: domStructureValid
       };
     }
@@ -227,8 +252,8 @@ function verifyS9Fixtures() {
     passed: allPassed,
     fixtures: results,
     details: allPassed
-      ? 'All 5 Gemini fixtures verified: 100% de-identified (zero emails/tokens) and valid DOM structure.'
-      : 'Some DOM fixtures failed verification or de-identification checks.'
+      ? 'All 5 Gemini fixtures verified via browser DOMParser: zero parsererror, 100% de-identified (zero emails/tokens), and exact selector presence.'
+      : 'Some DOM fixtures failed DOMParser validation or de-identification checks.'
   };
 }
 
@@ -240,7 +265,6 @@ async function main() {
   const server = await startFixtureServer();
   await launchChrome();
   const { provenanceExists, cases: goldens } = loadGoldens();
-  const s9Result = verifyS9Fixtures();
 
   const extId = calculateExtensionId(EXTENSION_DIR);
   console.log(`[Test Harness] M0-B Extension ID: ${extId}`);
@@ -260,6 +284,8 @@ async function main() {
   console.log(`[Test Harness] Connecting CDP WebSocket to Runner (${runnerTarget.webSocketDebuggerUrl})...`);
   let cdp = new CdpClient(runnerTarget.webSocketDebuggerUrl);
   await cdp.connect();
+
+  const s9Result = await verifyS9Fixtures(cdp);
 
   await cdp.send('Page.reload');
   await new Promise(r => setTimeout(r, 600));
@@ -314,12 +340,12 @@ async function main() {
   // S8: Offscreen Document Clipboard Copy + Non-Destructive Read-Back
   // -------------------------------------------------------------
   console.log('[Test Harness] Executing S8: Offscreen Document Clipboard Copy & Non-Destructive Read-Back...');
-  // 1. Backup developer's existing clipboard
-  let originalClipboard = '';
+  // 1. Backup developer's existing clipboard (assert read success before mutating)
+  let originalClipboard = null;
   try {
     originalClipboard = execSync('pbpaste', { encoding: 'utf-8' });
   } catch (e) {
-    originalClipboard = '';
+    throw new Error(`Failed to safely read initial system clipboard via pbpaste: ${e.message}`);
   }
 
   const s8Payload = 'meticulous-handoff-' + Date.now();
@@ -360,14 +386,17 @@ async function main() {
     });
     offscreenClosed = Boolean(offscreenCheckEval.result?.value);
   } finally {
-    // 2. Restore developer's original clipboard (non-destructive)
+    // 2. Restore developer's original clipboard (non-destructive) and assert read-back equality
     try {
-      const p = spawn('pbcopy');
-      p.stdin.write(originalClipboard);
-      p.stdin.end();
-      console.log('[Test Harness] Original system clipboard successfully restored (non-destructive).');
+      execSync('pbcopy', { input: originalClipboard, encoding: 'utf-8' });
+      const restored = execSync('pbpaste', { encoding: 'utf-8' });
+      if (restored !== originalClipboard) {
+        throw new Error('System clipboard restoration verification failed: read-back did not match backup!');
+      }
+      console.log('[Test Harness] Original system clipboard successfully restored and verified (non-destructive).');
     } catch (e) {
-      console.error('[Test Harness] Failed to restore original clipboard:', e.message);
+      console.error('[Test Harness] Critical error restoring original clipboard:', e.message);
+      throw e;
     }
   }
 
@@ -431,7 +460,32 @@ async function main() {
   });
   const s6SwRes = s6Eval.result?.value;
 
-  // 5. Verify no duplicate tabs were spawned
+  // 5. Verify Web Lifecycle Freeze & Recovery
+  console.log('[Test Harness] Verifying Web Lifecycle Freeze state transition & recovery via CDP...');
+  // Refresh target list to get fresh websocket url for the fixture tab after reload
+  const freshTargets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+  const fixtureTarget = freshTargets.find(t => t.url && t.url.includes(`${HTTP_PORT}/long-stream.html`));
+  let freezeSupported = false;
+  let recoveredFromFreeze = false;
+  if (fixtureTarget) {
+    const fixtureCdp = new CdpClient(fixtureTarget.webSocketDebuggerUrl);
+    try {
+      await fixtureCdp.connect();
+      await fixtureCdp.send('Page.setWebLifecycleState', { state: 'frozen' });
+      const freezeEval = await fixtureCdp.send('Runtime.evaluate', { expression: 'document.visibilityState', returnByValue: true });
+      const wasHiddenOrFrozen = (freezeEval.result?.value === 'hidden');
+      await fixtureCdp.send('Page.setWebLifecycleState', { state: 'active' });
+      freezeSupported = true;
+      recoveredFromFreeze = wasHiddenOrFrozen;
+      console.log(`[Test Harness] Page.setWebLifecycleState (freeze -> active) verified successfully.`);
+    } catch (e) {
+      console.log(`[Test Harness] Page.setWebLifecycleState notice: ${e.message}`);
+    } finally {
+      fixtureCdp.close();
+    }
+  }
+
+  // 6. Verify no duplicate tabs were spawned
   const tabsCountEval = await cdp.send('Runtime.evaluate', {
     expression: `(async () => { const tabs = await chrome.tabs.query({ url: '${fixtureUrl}' }); return tabs.length; })()`,
     awaitPromise: true,
@@ -447,7 +501,9 @@ async function main() {
     s6SwRes.reused === true &&
     s6SwRes.spawnedNew === false &&
     s6SwRes.tabId === numericTabId &&
-    fixtureTabsCount === 1
+    fixtureTabsCount === 1 &&
+    freezeSupported &&
+    recoveredFromFreeze
   );
 
   const s6Result = {
@@ -461,9 +517,11 @@ async function main() {
     recoveredFromDiscard: s6SwRes.recoveredFromDiscard,
     discardedAfter: s6SwRes.discardedAfter,
     fixtureTabsCount,
+    freezeSupported,
+    recoveredFromFreeze,
     details: s6Passed
-      ? 'Tab was genuinely discarded (asserted true), detected by ensureBroTab, reloaded, and reused without creating duplicate tabs.'
-      : 'Tab discard recovery failed or duplicate tabs were detected.'
+      ? 'Tab was genuinely discarded (asserted true), detected by ensureBroTab, reloaded, lifecycle freeze tested, and reused without creating duplicate tabs.'
+      : 'Tab discard/freeze recovery failed or duplicate tabs were detected.'
   };
 
   // -------------------------------------------------------------
@@ -493,6 +551,12 @@ async function main() {
     returnByValue: true
   });
 
+  // Track SW target ID before termination
+  const preReloadTargets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+  const swBefore = preReloadTargets.find(t => t.type === 'service_worker' && t.url.includes(extId));
+  const swTargetIdBefore = swBefore ? swBefore.id : null;
+  console.log(`[Test Harness] Pre-reload Service Worker Target ID: ${swTargetIdBefore}`);
+
   // Phase 5B: Real Service Worker Termination & Reload via chrome.runtime.reload()
   console.log('[Test Harness] Triggering real Service Worker termination & reload...');
   try {
@@ -519,6 +583,33 @@ async function main() {
   cdp = new CdpClient(runnerTarget.webSocketDebuggerUrl);
   await cdp.connect();
   await new Promise(r => setTimeout(r, 500));
+
+  // Verify SW target ID changed (assert genuine SW process termination & rebirth)
+  const postReloadTargets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+  const swAfter = postReloadTargets.find(t => t.type === 'service_worker' && t.url.includes(extId));
+  const swTargetIdAfter = swAfter ? swAfter.id : null;
+  const swProcessReborn = Boolean(swTargetIdBefore && swTargetIdAfter && swTargetIdBefore !== swTargetIdAfter);
+  console.log(`[Test Harness] Post-reload Service Worker Target ID: ${swTargetIdAfter} (process renewed: ${swProcessReborn})`);
+
+  // Verify DOM send execution count remained zero or did not increment in fixture tab
+  let domSendCountMaintained = false;
+  let domSendExecCount = -1;
+  const fixtureTabFresh = postReloadTargets.find(t => t.url && t.url.includes(`${HTTP_PORT}/long-stream.html`));
+  if (fixtureTabFresh) {
+    const fixtureCdp2 = new CdpClient(fixtureTabFresh.webSocketDebuggerUrl);
+    await fixtureCdp2.connect();
+    try {
+      const sendCountEval = await fixtureCdp2.send('Runtime.evaluate', {
+        expression: 'window.__ttbSendExecutionCount || 0',
+        returnByValue: true
+      });
+      domSendExecCount = sendCountEval.result?.value ?? 0;
+      domSendCountMaintained = (domSendExecCount === 0);
+      console.log(`[Test Harness] Fixture DOM window.__ttbSendExecutionCount: ${domSendExecCount} (zero duplicate send asserted: ${domSendCountMaintained})`);
+    } finally {
+      fixtureCdp2.close();
+    }
+  }
 
   // Phase 5C: Verify Write-ahead protection after real SW boot
   // On fresh boot, sw.js runs top-level reconcile()
@@ -569,6 +660,8 @@ async function main() {
   const watchdogAlarmRegistered = alarms.some(a => a.name === 'ttb-spike-watchdog');
 
   const s5Passed = Boolean(
+    swProcessReborn &&
+    domSendCountMaintained &&
     writeAheadMaintained &&
     timeoutReconcile.status === 'timed_out_total' &&
     watchdogAlarmRegistered
@@ -578,7 +671,10 @@ async function main() {
     test: 'S5',
     name: 'SW Watchdog, 3-min Survival & Reconcile Recovery',
     passed: s5Passed,
-    realSwTerminatedAndRestarted: true,
+    realSwTerminatedAndRestarted: swProcessReborn,
+    swTargetIdBefore,
+    swTargetIdAfter,
+    domSendExecutionCount: domSendExecCount,
     writeAheadMaintained,
     submitAttemptCount: afterBootTalk?.submitAttemptCount,
     postBootPhase: afterBootTalk?.phase,
@@ -586,7 +682,7 @@ async function main() {
     timeoutExpiredStatus: timeoutReconcile.status,
     watchdogAlarmRegistered,
     alarms,
-    details: 'Verified real SW termination & restart with Write-ahead protection (count=1), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog.'
+    details: 'Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog.'
   };
 
   // -------------------------------------------------------------

@@ -94,6 +94,7 @@
   }
 
   async function insertAndSend(text) {
+    window.__ttbSendExecutionCount = (window.__ttbSendExecutionCount || 0) + 1;
     const editor = q('editor');
     if (!editor) return { ok: false, error: 'Editor not found' };
 

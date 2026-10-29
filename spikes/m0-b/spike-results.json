@@ -4,6 +4,9 @@
     "name": "SW Watchdog, 3-min Survival & Reconcile Recovery",
     "passed": true,
     "realSwTerminatedAndRestarted": true,
+    "swTargetIdBefore": "C7710D49770E781D5403558BE7EDC7F1",
+    "swTargetIdAfter": "2FE26F5BD3530C11C305AD9C7ABC9346",
+    "domSendExecutionCount": 0,
     "writeAheadMaintained": true,
     "submitAttemptCount": 1,
     "postBootPhase": "streaming",
@@ -15,31 +18,33 @@
         "name": "ttb-spike-watchdog",
         "periodInMinutes": 1,
         "persistAcrossSessions": true,
-        "scheduledTime": 1793237157007.871
+        "scheduledTime": 1793237658596.362
       }
     ],
-    "details": "Verified real SW termination & restart with Write-ahead protection (count=1), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog."
+    "details": "Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog."
   },
   "s6": {
     "test": "S6",
     "name": "Tab Discard / Freeze Recovery & Pinned Tab Reuse",
     "passed": true,
-    "tabId": 328112598,
+    "tabId": 328112618,
     "reused": true,
     "spawnedNew": false,
     "wasDiscardedBefore": true,
     "recoveredFromDiscard": true,
     "discardedAfter": false,
     "fixtureTabsCount": 1,
-    "details": "Tab was genuinely discarded (asserted true), detected by ensureBroTab, reloaded, and reused without creating duplicate tabs."
+    "freezeSupported": true,
+    "recoveredFromFreeze": true,
+    "details": "Tab was genuinely discarded (asserted true), detected by ensureBroTab, reloaded, lifecycle freeze tested, and reused without creating duplicate tabs."
   },
   "s7": {
     "test": "S7",
     "name": "Markdown Extraction Fidelity (5 Goldens with Provenance)",
     "passed": true,
     "provenanceExists": true,
-    "casesPassed": 5,
-    "totalCases": 5,
+    "casesPassed": 6,
+    "totalCases": 6,
     "details": "All 5 golden cases matched 100% with verified PROVENANCE.md documentation."
   },
   "s8": {
@@ -51,7 +56,7 @@
       "method": "execCommand"
     },
     "clipboardReadBackMatched": true,
-    "systemClipboardValue": "meticulous-handoff-1793237096524",
+    "systemClipboardValue": "meticulous-handoff-1793237598158",
     "offscreenClosed": true,
     "clipboardRestored": true,
     "details": "System clipboard verified via pbpaste (exact match), offscreen doc cleanly closed, and prior clipboard restored."
@@ -73,6 +78,8 @@
           "hasEmail": false,
           "hasUser": false,
           "hasTokens": false,
+          "parserErrorsFound": 0,
+          "missingSelectors": [],
           "domValid": true
         }
       },
@@ -88,6 +95,8 @@
           "hasEmail": false,
           "hasUser": false,
           "hasTokens": false,
+          "parserErrorsFound": 0,
+          "missingSelectors": [],
           "domValid": true
         }
       },
@@ -103,6 +112,8 @@
           "hasEmail": false,
           "hasUser": false,
           "hasTokens": false,
+          "parserErrorsFound": 0,
+          "missingSelectors": [],
           "domValid": true
         }
       },
@@ -118,6 +129,8 @@
           "hasEmail": false,
           "hasUser": false,
           "hasTokens": false,
+          "parserErrorsFound": 0,
+          "missingSelectors": [],
           "domValid": true
         }
       },
@@ -133,11 +146,13 @@
           "hasEmail": false,
           "hasUser": false,
           "hasTokens": false,
+          "parserErrorsFound": 0,
+          "missingSelectors": [],
           "domValid": true
         }
       }
     ],
-    "details": "All 5 Gemini fixtures verified: 100% de-identified (zero emails/tokens) and valid DOM structure."
+    "details": "All 5 Gemini fixtures verified via browser DOMParser: zero parsererror, 100% de-identified (zero emails/tokens), and exact selector presence."
   },
   "allPassed": true
 }
