@@ -1,6 +1,7 @@
 // src/sw/runner.ts
 import type {
   Talk,
+  FailureCode,
   BroAdapter,
   RuntimeV1Storage,
   SessionV1Storage,
@@ -23,7 +24,7 @@ import { evaluateTick, TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
 import { validateBroChatUrl } from '../shared/validate.ts';
 import { reconcile } from './reconcile.ts';
 import { getBootReadyPromise, type BootResult } from './boot.ts';
-import { performHandoff } from './handoff.ts';
+import { performHandoff, isPopupOpen } from './handoff.ts';
 import { getFailureInfo } from '../shared/failures.ts';
 import type { DebugV1Storage } from '../shared/types.ts';
 import type { TabsApiLike } from './tab.ts';
@@ -88,18 +89,42 @@ export class TalkRunner {
     let failedTalk = transition(talk, { type: 'FAIL', code, maybeSent }, now);
     await finalizeTerminalTalk(this.storageLocal, failedTalk, now);
     this.alarms?.clear('ttb-watchdog');
-    performHandoff(
-      {
-        storageLocal: this.storageLocal,
-        storageSession: this.storageSession,
-        adapter: this.adapter,
-        tabsApi: this.tabsApi,
-        windowsApi: this.windowsApi,
-        runtimeApi: this.runtimeApi,
-        offscreenApi: this.offscreenApi
-      },
-      failedTalk
-    ).catch(err => console.warn('[TalkRunner] Handoff execution error:', err));
+
+    const handoffDeps = {
+      storageLocal: this.storageLocal,
+      storageSession: this.storageSession,
+      adapter: this.adapter,
+      tabsApi: this.tabsApi,
+      windowsApi: this.windowsApi,
+      runtimeApi: this.runtimeApi,
+      offscreenApi: this.offscreenApi
+    };
+
+    performHandoff(handoffDeps, failedTalk)
+      .then((handoffRes) => {
+        // If popup was open and countdown started, set continuation timer
+        // If user closes popup during countdown, SW automatically completes the handoff
+        if (handoffRes.status === 'pending') {
+          setTimeout(async () => {
+            try {
+              const rt = await getRuntimeStorage(this.storageLocal);
+              if (
+                rt.lastTalk?.id === failedTalk.id &&
+                rt.lastTalk.handoff?.status === 'pending'
+              ) {
+                const open = await isPopupOpen(this.runtimeApi);
+                if (!open) {
+                  await performHandoff(handoffDeps, rt.lastTalk, { forceClosed: true });
+                }
+              }
+            } catch (err) {
+              console.warn('[TalkRunner] Popup close continuation error:', err);
+            }
+          }, 1800);
+        }
+      })
+      .catch((err) => console.warn('[TalkRunner] Handoff execution error:', err));
+
     return failedTalk;
   }
 
@@ -108,7 +133,7 @@ export class TalkRunner {
   }
 
   async boot(): Promise<BootResult> {
-    const bootResult = await getBootReadyPromise(this.storageSession);
+    const bootResult = await getBootReadyPromise(this.storageSession as any);
     await this.reconcile(bootResult.isNewBrowserSession);
     return bootResult;
   }
@@ -184,8 +209,8 @@ export class TalkRunner {
     let ready: ReadyResult;
     try {
       const settings = await getSettingsStorage(this.storageLocal);
-      const chatRef = settings.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
-      const chatId = chatRef ? chatRef.chatId : '';
+      const chatRes = settings?.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
+      const chatId = chatRes?.valid && chatRes.ref ? chatRes.ref.chatId : '';
       ready = await this.adapter.checkReady({ chatId, text });
     } catch (e) {
       ready = { ok: false, code: 'INTERNAL' as const };
@@ -433,7 +458,7 @@ export class TalkRunner {
     const now = this.now();
     const decision = await this.mutex.run(async () => {
       const runtime = await getRuntimeStorage(this.storageLocal);
-      const session = await getSessionStorage(this.storageSession);
+      const session = this.storageSession ? await getSessionStorage(this.storageSession) : null;
       const d = reconcile(runtime, session, now, isNewBrowserSession);
       let talk = runtime.lastTalk;
 
@@ -478,8 +503,8 @@ export class TalkRunner {
         let ready: ReadyResult;
         try {
           const settings = await getSettingsStorage(this.storageLocal);
-          const chatRef = settings.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
-          const chatId = chatRef ? chatRef.chatId : '';
+          const chatRes = settings?.broChatUrl ? validateBroChatUrl(settings.broChatUrl) : null;
+          const chatId = chatRes?.valid && chatRes.ref ? chatRes.ref.chatId : '';
           ready = await this.adapter.checkReady({ chatId, text: talk.text });
         } catch (e) {
           ready = { ok: false, code: 'INTERNAL' as const };

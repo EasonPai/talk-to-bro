@@ -113,7 +113,7 @@ export type ReadyResult =
   | { ok: false; code: FailureCode };
 
 export type SendResult =
-  | { ok: true }
+  | { ok: true; sentAt?: number }
   | { ok: false; code: FailureCode };
 
 export interface ProbeResult {

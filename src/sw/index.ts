@@ -2,7 +2,7 @@
 // Background Service Worker for Talk To Bro Personally (MV3)
 import { getBootReadyPromise } from './boot.ts';
 import { TalkRunner } from './runner.ts';
-import { getRuntimeStorage, getSettingsStorage } from '../shared/storage.ts';
+import { getRuntimeStorage, saveRuntimeStorage, getSettingsStorage } from '../shared/storage.ts';
 import { computeStats } from '../shared/stats.ts';
 import { RealBroAdapter } from './adapter-real.ts';
 import { performHandoff } from './handoff.ts';
@@ -111,7 +111,11 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
             adapter: realAdapter
           },
           runtime.lastTalk,
-          { forceClosed: true, alreadyCopied: !!msg.alreadyCopied }
+          {
+            forceClosed: true,
+            alreadyCopied: !!msg.alreadyCopied,
+            authorizeDeferred: !!msg.authorizeDeferred || !!msg.explicitUserAction
+          }
         );
         sendResponse({ ok: true, handoff });
       } else {
@@ -134,11 +138,9 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
             focused: false
           }
         };
-        await chrome.storage.local.set({
-          'runtime:v1': {
-            ...runtime,
-            lastTalk: updatedTalk
-          }
+        await saveRuntimeStorage(chrome.storage.local, {
+          ...runtime,
+          lastTalk: updatedTalk
         });
         sendResponse({ ok: true });
       } else {

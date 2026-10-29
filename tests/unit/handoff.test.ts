@@ -218,3 +218,89 @@ test('Handoff - NO_BRO_CHAT failure opens Options page and records partial statu
   assert.equal(res.focused, false);
   assert.equal(optionsPageOpened, true, 'Options page must be opened for NO_BRO_CHAT');
 });
+
+test('Handoff - Explicit user action authorizes deferred handoff execution', async () => {
+  const storageLocal = new MemoryStorage();
+  const adapter = new FakeAdapter();
+  let tabSwitchCalled = false;
+  let windowFocusCalled = false;
+
+  await storageLocal.set({
+    'settings:v1': { broChatUrl: 'https://gemini.google.com/app/deferred-chat', updatedAt: 1000 }
+  });
+
+  let talk = createTalk('Deferred Talk Authorization', 1000);
+  talk = transition(talk, { type: 'FAIL', code: 'INTERRUPTED' }, 1010);
+  talk = {
+    ...talk,
+    handoff: {
+      status: 'deferred',
+      copied: false,
+      focused: false
+    }
+  };
+  await storageLocal.set({
+    'runtime:v1': { lastTalk: talk, logByTalkId: {} }
+  });
+
+  const deps: HandoffDeps = {
+    storageLocal,
+    adapter,
+    runtimeApi: { getContexts: async () => [] },
+    tabsApi: {
+      query: async () => [{ id: 501, windowId: 77, url: 'https://gemini.google.com/app/deferred-chat', pinned: true }],
+      update: async (tabId: number, info: any) => {
+        if (tabId === 501 && info.active) tabSwitchCalled = true;
+        return { id: tabId } as any;
+      }
+    } as any,
+    windowsApi: {
+      update: async (winId: number, info: any) => {
+        if (winId === 77 && info.focused) windowFocusCalled = true;
+        return {} as any;
+      }
+    }
+  };
+
+  // Calling with authorizeDeferred: true executes the handoff and marks it done
+  const res = await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true, authorizeDeferred: true });
+  assert.equal(res.status, 'done');
+  assert.equal(res.copied, true);
+  assert.equal(res.focused, true);
+  assert.equal(tabSwitchCalled, true);
+  assert.equal(windowFocusCalled, true);
+
+  const updatedRuntime = (await storageLocal.get('runtime:v1'))['runtime:v1'];
+  assert.equal(updatedRuntime.lastTalk.handoff.status, 'done');
+});
+
+test('Handoff - Pre-action persisted cancelled check prevents execution', async () => {
+  const storageLocal = new MemoryStorage();
+  const adapter = new FakeAdapter();
+  let tabSwitchCalled = false;
+
+  let talk = createTalk('Cancel Race Talk', 1000);
+  talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_IDLE' }, 1010);
+
+  // In memory, handoff might look pending, but storage has persisted 'cancelled'
+  const cancelledTalk: Talk = {
+    ...talk,
+    handoff: { status: 'cancelled', copied: false, focused: false }
+  };
+  await storageLocal.set({
+    'runtime:v1': { lastTalk: cancelledTalk, logByTalkId: {} }
+  });
+
+  const deps: HandoffDeps = {
+    storageLocal,
+    adapter,
+    runtimeApi: { getContexts: async () => [] },
+    tabsApi: {
+      update: async () => { tabSwitchCalled = true; return {} as any; }
+    } as any
+  };
+
+  const res = await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true });
+  assert.equal(res.status, 'cancelled');
+  assert.equal(tabSwitchCalled, false, 'Tab switch must not be called when storage is cancelled');
+});

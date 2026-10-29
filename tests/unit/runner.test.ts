@@ -584,7 +584,7 @@ test('Talk Runner - CTO Review 2 Probe 3: Late checkReady rejection on recovery 
   // checkReady resolves ok, but clock advances to 20000 during the async check
   h.adapter.checkReady = async () => {
     h.setTime(20000);
-    return { ok: true, chatId: 'mock-chat' };
+    return { ok: true, editorHasOwnText: false };
   };
 
   await h.runner.boot();
@@ -622,7 +622,7 @@ test('Talk Runner - Fault injection via debug:v1.forceFailure in submitTalk', as
   assert.equal(res.talk?.failure?.stage, 'send');
 
   // Verify forceFailure was consumed and removed
-  const debugAfter = (await h.storageLocal.get('debug:v1'))['debug:v1'];
+  const debugAfter = ((await h.storageLocal.get('debug:v1'))['debug:v1'] || {}) as Record<string, any>;
   assert.equal(debugAfter.forceFailure, undefined);
 
   // Now inject read-stage QUOTA_EXHAUSTED
@@ -657,7 +657,7 @@ test('Talk Runner - Fault injection via debug:v1.forceFailure in tick', async ()
   assert.equal(tickTalk?.failure?.code, 'TAB_UNRESPONSIVE');
   assert.equal(tickTalk?.failure?.stage, 'read');
 
-  const debugAfter = (await h.storageLocal.get('debug:v1'))['debug:v1'];
+  const debugAfter = ((await h.storageLocal.get('debug:v1'))['debug:v1'] || {}) as Record<string, any>;
   assert.equal(debugAfter.forceFailure, undefined);
 });
 

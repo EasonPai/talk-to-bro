@@ -23,6 +23,7 @@ export interface HandoffDeps {
 }
 
 let offscreenLock: Promise<any> = Promise.resolve();
+const activeHandoffClaims = new Set<string>();
 
 /**
  * Serialized helper to copy text using MV3 Offscreen Document.
@@ -125,14 +126,31 @@ export async function isPopupOpen(runtimeApi?: HandoffDeps['runtimeApi']): Promi
 export async function performHandoff(
   deps: HandoffDeps,
   talk: Talk,
-  options?: { forceClosed?: boolean; alreadyCopied?: boolean }
+  options?: {
+    forceClosed?: boolean;
+    alreadyCopied?: boolean;
+    authorizeDeferred?: boolean;
+  }
 ): Promise<TalkHandoff> {
-  // 1. Guard: deferred or cancelled handoffs must NOT auto-run
-  if (talk.handoff?.status === 'deferred' || talk.handoff?.status === 'cancelled') {
+  // 1. Guard: cancelled handoffs must NEVER run
+  if (talk.handoff?.status === 'cancelled') {
     return talk.handoff;
   }
 
-  // 2. Check if Action Popup is open
+  // 2. Guard: deferred handoffs must NOT auto-run unless explicit user action authorized it
+  if (talk.handoff?.status === 'deferred' && !options?.authorizeDeferred) {
+    return talk.handoff;
+  }
+
+  // 3. Guard: already completed (done or partial) and not explicitly re-authorized
+  if (
+    (talk.handoff?.status === 'done' || talk.handoff?.status === 'partial') &&
+    !options?.authorizeDeferred
+  ) {
+    return talk.handoff;
+  }
+
+  // 4. Check if Action Popup is open
   const popupActive = !options?.forceClosed && (await isPopupOpen(deps.runtimeApi));
   if (popupActive) {
     // Popup will display countdown and manage cancellation
@@ -143,103 +161,130 @@ export async function performHandoff(
     };
   }
 
-  // 3. Popup is closed (or explicit execution requested): Execute Handoff
-  // Set Action Badge to '!'
-  if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {
-    chrome.action.setBadgeText({ text: '!' }).catch(() => {});
+  // 5. Deduplicate concurrent in-flight handoffs for the same talkId
+  if (activeHandoffClaims.has(talk.id)) {
+    return talk.handoff || { status: 'pending', copied: false, focused: false };
   }
+  activeHandoffClaims.add(talk.id);
 
-  // A. Copy Talk text
-  let copied = !!options?.alreadyCopied;
-  if (!copied) {
-    copied = await copyViaOffscreen(talk.text, deps);
-  }
-
-  // B. Switch to Bro Chat tab & Focus Window
-  let focused = false;
-  const failureCode = talk.failure?.code || 'INTERNAL';
-
-  if (failureCode === 'NO_BRO_CHAT') {
-    // Cannot switch to a nonexistent Bro Chat tab; open Options page
-    const openOptions = deps.runtimeApi?.openOptionsPage || (typeof chrome !== 'undefined' ? chrome.runtime?.openOptionsPage : null);
-    if (typeof openOptions === 'function') {
-      try {
-        await openOptions();
-      } catch (e) {
-        console.warn('[Handoff] Failed to open options page:', e);
-      }
+  try {
+    // 6. Pre-action check: verify persisted Talk state to guard against concurrent cancellation
+    const currentRuntime = await getRuntimeStorage(deps.storageLocal);
+    if (
+      currentRuntime.lastTalk?.id !== talk.id ||
+      currentRuntime.lastTalk?.handoff?.status === 'cancelled'
+    ) {
+      return (
+        currentRuntime.lastTalk?.handoff || {
+          status: 'cancelled',
+          copied: false,
+          focused: false
+        }
+      );
     }
-    focused = false;
-  } else {
-    // Resolve bro chat tab
-    const settings = await getSettingsStorage(deps.storageLocal);
-    const broChatUrl = settings.broChatUrl;
 
-    if (broChatUrl) {
-      try {
-        const tabRes = await ensureBroTab(broChatUrl, deps.storageSession, deps.tabsApi);
-        if (tabRes.ok && tabRes.tabId) {
-          const tabs = deps.tabsApi || (typeof chrome !== 'undefined' ? chrome.tabs : null);
-          const windows = deps.windowsApi || (typeof chrome !== 'undefined' ? chrome.windows : null);
+    // Set Action Badge to '!'
+    if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {
+      chrome.action.setBadgeText({ text: '!' }).catch(() => {});
+    }
 
-          // Activate tab
-          if (tabs?.update) {
-            await tabs.update(tabRes.tabId, { active: true });
-          }
+    // A. Copy Talk text
+    let copied = !!options?.alreadyCopied;
+    if (!copied) {
+      copied = await copyViaOffscreen(talk.text, deps);
+    }
 
-          // Focus window
-          let winId = tabRes.windowId;
-          if (!winId && tabs?.get) {
-            try {
-              const t = await tabs.get(tabRes.tabId);
-              winId = t.windowId;
-            } catch {}
-          }
+    // B. Switch to Bro Chat tab & Focus Window
+    let focused = false;
+    const failureCode = talk.failure?.code || 'INTERNAL';
 
-          if (windows?.update && winId) {
-            try {
-              await windows.update(winId, { focused: true });
-              focused = true;
-            } catch {
+    if (failureCode === 'NO_BRO_CHAT') {
+      // Cannot switch to a nonexistent Bro Chat tab; open Options page
+      const openOptions =
+        deps.runtimeApi?.openOptionsPage ||
+        (typeof chrome !== 'undefined' ? chrome.runtime?.openOptionsPage : null);
+      if (typeof openOptions === 'function') {
+        try {
+          await openOptions();
+        } catch (e) {
+          console.warn('[Handoff] Failed to open options page:', e);
+        }
+      }
+      focused = false;
+    } else {
+      // Resolve bro chat tab
+      const settings = await getSettingsStorage(deps.storageLocal);
+      const broChatUrl = settings?.broChatUrl;
+
+      if (broChatUrl) {
+        try {
+          const tabRes = await ensureBroTab(broChatUrl, deps.storageSession, deps.tabsApi);
+          if (tabRes.ok && tabRes.tabId) {
+            const tabs = deps.tabsApi || (typeof chrome !== 'undefined' ? chrome.tabs : null);
+            const windows =
+              deps.windowsApi || (typeof chrome !== 'undefined' ? chrome.windows : null);
+
+            // Activate tab
+            if (tabs?.update) {
+              await tabs.update(tabRes.tabId, { active: true });
+            }
+
+            // Focus window
+            let winId = tabRes.windowId;
+            if (!winId && tabs?.get) {
+              try {
+                const t = await tabs.get(tabRes.tabId);
+                winId = t.windowId;
+              } catch {}
+            }
+
+            if (windows?.update && winId) {
+              try {
+                await windows.update(winId, { focused: true });
+                focused = true;
+              } catch {
+                focused = false;
+              }
+            } else {
               focused = false;
             }
-          } else {
-            focused = true;
-          }
 
-          // Injected shadow DOM notice on Gemini page
-          const failureInfo = getFailureInfo(failureCode);
-          const noticeMsg = `${failureInfo.userMessage}${copied ? '（Talk 已複製，Ctrl+V 貼上）' : ''}`;
-          deps.adapter.showHandoffNotice({ message: noticeMsg }).catch(() => {});
+            // Injected shadow DOM notice on Gemini page
+            const failureInfo = getFailureInfo(failureCode);
+            const noticeMsg = `${failureInfo.userMessage}${copied ? '（Talk 已複製，Ctrl+V 貼上）' : ''}`;
+            deps.adapter.showHandoffNotice({ message: noticeMsg }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn('[Handoff] Tab switch failed:', e);
+          focused = false;
         }
-      } catch (e) {
-        console.warn('[Handoff] Tab switch failed:', e);
-        focused = false;
       }
     }
-  }
 
-  const resultStatus: TalkHandoff['status'] = (copied && focused) ? 'done' : 'partial';
-  const handoffResult: TalkHandoff = {
-    status: resultStatus,
-    copied,
-    focused
-  };
-
-  // Atomically update lastTalk with the observed handoff outcome if it matches current Talk
-  const runtime = await getRuntimeStorage(deps.storageLocal);
-  if (runtime.lastTalk && runtime.lastTalk.id === talk.id) {
-    const updatedTalk: Talk = {
-      ...runtime.lastTalk,
-      handoff: handoffResult
+    const resultStatus: TalkHandoff['status'] = copied && focused ? 'done' : 'partial';
+    const handoffResult: TalkHandoff = {
+      status: resultStatus,
+      copied,
+      focused
     };
-    await deps.storageLocal.set({
-      'runtime:v1': {
-        ...runtime,
-        lastTalk: updatedTalk
-      }
-    });
-  }
 
-  return handoffResult;
+    // Atomically update lastTalk with the observed handoff outcome if it matches current Talk
+    const runtime = await getRuntimeStorage(deps.storageLocal);
+    if (runtime.lastTalk && runtime.lastTalk.id === talk.id) {
+      const updatedTalk: Talk = {
+        ...runtime.lastTalk,
+        handoff: handoffResult
+      };
+      await deps.storageLocal.set({
+        'runtime:v1': {
+          ...runtime,
+          lastTalk: updatedTalk
+        }
+      });
+    }
+
+    return handoffResult;
+  } finally {
+    activeHandoffClaims.delete(talk.id);
+  }
 }

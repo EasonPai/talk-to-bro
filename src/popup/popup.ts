@@ -40,32 +40,14 @@ function startHandoffCountdown(talk: Talk) {
   countdownText.textContent = `Pip 帶你去找老大… (${(remainingMs / 1000).toFixed(1)}s)`;
 
   if (cancelBtn) {
-    cancelBtn.onclick = async () => {
+    cancelBtn.onclick = () => {
       clearCountdown();
       handoffNotice.style.display = 'none';
       if (countdownText) {
         countdownText.textContent = '已取消切換，Talk 內容已保留在輸入框。';
       }
 
-      // 1. Immediately persist cancellation to storage from Popup
-      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-        try {
-          const res = await chrome.storage.local.get('runtime:v1');
-          const rt = res['runtime:v1'];
-          if (rt?.lastTalk && rt.lastTalk.id === talk.id) {
-            rt.lastTalk.handoff = {
-              status: 'cancelled',
-              copied: false,
-              focused: false
-            };
-            await chrome.storage.local.set({ 'runtime:v1': rt });
-          }
-        } catch (err) {
-          console.warn('[Popup] Failed to persist cancellation locally:', err);
-        }
-      }
-
-      // 2. Notify SW to ensure service worker state synchronization
+      // Notify SW to persist cancellation state (Single-Writer architecture)
       chrome.runtime.sendMessage({ action: 'handoff/cancel', talkId: talk.id });
     };
   }
@@ -77,17 +59,20 @@ function startHandoffCountdown(talk: Talk) {
       countdownText.textContent = '正在切換至老大分頁…';
 
       // 1. Copy Talk text using navigator.clipboard
+      let copiedOk = false;
       try {
         await navigator.clipboard.writeText(talk.text);
+        copiedOk = true;
       } catch (e) {
         console.warn('[Popup] navigator.clipboard write failed:', e);
+        copiedOk = false;
       }
 
       // 2. Request SW to switch tab and focus window
       chrome.runtime.sendMessage({
         action: 'handoff/switch_tab',
         talkId: talk.id,
-        alreadyCopied: true
+        alreadyCopied: copiedOk
       });
     } else {
       countdownText.textContent = `Pip 帶你去找老大… (${(remainingMs / 1000).toFixed(1)}s)`;
@@ -198,15 +183,19 @@ export function renderTalkState(talk: Talk | null) {
         if (gotoBroBtn) {
           gotoBroBtn.focus();
           gotoBroBtn.onclick = async () => {
+            let copiedOk = false;
             try {
               await navigator.clipboard.writeText(talk.text);
+              copiedOk = true;
             } catch (e) {
               console.warn('[Popup] clipboard write failed:', e);
+              copiedOk = false;
             }
             chrome.runtime.sendMessage({
               action: 'handoff/switch_tab',
               talkId: talk.id,
-              alreadyCopied: true
+              alreadyCopied: copiedOk,
+              authorizeDeferred: true
             });
           };
         }
@@ -224,7 +213,13 @@ export function renderTalkState(talk: Talk | null) {
         if (handoffNotice) {
           handoffNotice.style.display = 'flex';
           const countdownText = document.getElementById('countdown-text');
-          if (countdownText) countdownText.textContent = 'Talk 內容已複製至剪貼簿。';
+          if (countdownText) {
+            if (talk.handoff.copied) {
+              countdownText.textContent = 'Talk 內容已複製至剪貼簿。';
+            } else {
+              countdownText.textContent = '已切換至老大分頁（剪貼簿未寫入，內容保留在輸入框）。';
+            }
+          }
           const cancelBtn = document.getElementById('cancel-handoff-btn');
           if (cancelBtn) cancelBtn.style.display = 'none';
         }

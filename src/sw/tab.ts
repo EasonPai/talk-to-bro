@@ -28,10 +28,10 @@ export interface TabsApiLike {
 export function isSameGeminiChat(urlA: string, urlB: string): boolean {
   const refA = validateBroChatUrl(urlA);
   const refB = validateBroChatUrl(urlB);
-  if (!refA || !refA.valid || !refB || !refB.valid) return false;
+  if (!refA || !refA.valid || !refA.ref || !refB || !refB.valid || !refB.ref) return false;
 
-  // Account prefix must match (e.g. both default / undefined, or both /u/1)
-  if (refA.accountPrefix !== refB.accountPrefix) return false;
+  // Account index must match (e.g. both default / undefined, or both /u/1)
+  if (refA.ref.accountIndex !== refB.ref.accountIndex) return false;
 
   // Canonical normalized chat URL must match exactly
   return refA.normalizedUrl === refB.normalizedUrl;
@@ -146,7 +146,7 @@ export async function ensureBroTab(
         resolve(); // resolve on timeout to allow subsequent readiness checks
       }, 15000);
 
-      tabs.onUpdated.addListener(listener);
+      tabs.onUpdated?.addListener(listener);
     });
   }
 
