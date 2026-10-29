@@ -174,3 +174,80 @@ test('Adapter Target Scope - extract binds strictly to target Talk user turn and
   const resUnmatched = extract({ talkId: 'talk-unknown', text: 'unknown word' });
   assert.equal(resUnmatched.error, 'EXTRACT_FAILED');
 });
+
+test('Adapter Target Scope - CTO Minimal Probe: missing explicit target returns null instead of unrelated single model', () => {
+  // Simulate DOM with NO user turns and exactly ONE unrelated unmarked model turn
+  const unrelatedModel = {
+    tagName: 'MODEL-RESPONSE',
+    getAttribute: (attr: string) => null,
+    compareDocumentPosition: () => 0
+  };
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => {
+      if (SELECTORS.userTurn.includes(sel)) return [];
+      if (SELECTORS.modelTurn.includes(sel)) return [unrelatedModel];
+      return [];
+    },
+    querySelector: () => null
+  };
+
+  // Explicit target requested but missing must return null, NOT unrelated model!
+  const target = findTargetModelTurn({ talkId: 'missing', text: 'missing' });
+  assert.equal(target, null, 'Must return null when explicit target is not found');
+
+  const extRes = extract({ talkId: 'missing', text: 'missing' });
+  assert.equal(extRes.error, 'EXTRACT_FAILED');
+});
+
+test('Adapter Target Scope - All model turns marked historical returns null for explicit unmatched target', () => {
+  const historicalModel = {
+    tagName: 'MODEL-RESPONSE',
+    getAttribute: (attr: string) => (attr === 'data-ttb-seen' ? '1' : null),
+    compareDocumentPosition: () => 0
+  };
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => {
+      if (SELECTORS.userTurn.includes(sel)) return [];
+      if (SELECTORS.modelTurn.includes(sel)) return [historicalModel];
+      return [];
+    },
+    querySelector: () => null
+  };
+
+  const target = findTargetModelTurn({ talkId: 'missing', text: 'missing' });
+  assert.equal(target, null, 'Must return null rather than returning last historical model');
+});
+
+test('Adapter Target Scope - Text-only match with multiple duplicate candidates returns null (no guessing)', () => {
+  const u1 = {
+    tagName: 'USER-QUERY',
+    getAttribute: (attr: string) => null,
+    compareDocumentPosition: () => 4,
+    querySelectorAll: () => [{ textContent: 'duplicate' }]
+  };
+  const u2 = {
+    tagName: 'USER-QUERY',
+    getAttribute: (attr: string) => null,
+    compareDocumentPosition: () => 4,
+    querySelectorAll: () => [{ textContent: 'duplicate' }]
+  };
+  const m1 = {
+    tagName: 'MODEL-RESPONSE',
+    getAttribute: (attr: string) => null,
+    compareDocumentPosition: () => 4
+  };
+
+  (globalThis as any).document = {
+    querySelectorAll: (sel: string) => {
+      if (SELECTORS.userTurn.includes(sel)) return [u1, u2];
+      if (SELECTORS.modelTurn.includes(sel)) return [m1];
+      return [];
+    },
+    querySelector: () => null
+  };
+
+  const target = findTargetModelTurn({ text: 'duplicate' });
+  assert.equal(target, null, 'Must return null when text-only candidates are ambiguous');
+});

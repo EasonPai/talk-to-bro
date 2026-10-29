@@ -175,6 +175,7 @@ const POS_FOLLOWING = typeof Node !== 'undefined' ? Node.DOCUMENT_POSITION_FOLLO
 /**
  * Locates the target model turn element associated with a specific talk or prompt text.
  * Strictly binds extraction and probing to the model turn responding to this Talk's user turn.
+ * Disables unbound fallback whenever explicit talkId/text is provided and rejects ambiguous targets.
  */
 export function findTargetModelTurn(args?: { talkId?: string; text?: string }): HTMLElement | null {
   const userTurns = queryAll<HTMLElement>('userTurn');
@@ -182,26 +183,46 @@ export function findTargetModelTurn(args?: { talkId?: string; text?: string }): 
 
   if (modelTurns.length === 0) return null;
 
+  const hasExplicitTarget = Boolean(args && (args.talkId || args.text));
+
   // 1. Identify post-baseline user turn matching talkId or text
   let targetUserTurn: HTMLElement | null = null;
   const newTurns = userTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
 
   if (args?.talkId) {
-    targetUserTurn = newTurns.find(el => el.getAttribute('data-ttb-talk-id') === args.talkId) || null;
+    const matchedById = newTurns.filter(el => el.getAttribute('data-ttb-talk-id') === args.talkId);
+    if (matchedById.length === 1) {
+      targetUserTurn = matchedById[0];
+    } else if (matchedById.length > 1) {
+      // Ambiguous multiple user turns with same talkId
+      return null;
+    }
   }
 
   if (!targetUserTurn && args?.text) {
     const targetNorm = normalizeText(args.text);
+    const matchedByText: HTMLElement[] = [];
     for (const turn of newTurns) {
       const lines = queryAll<HTMLElement>('userTurnText', turn);
       const observedText = lines.length > 0
         ? lines.map(l => (l.textContent || '').trim()).join('\n')
         : (turn.textContent || '').replace(/^你說了\s*/, '').trim();
       if (normalizeText(observedText) === targetNorm) {
-        targetUserTurn = turn;
-        break;
+        matchedByText.push(turn);
       }
     }
+
+    if (matchedByText.length === 1) {
+      targetUserTurn = matchedByText[0];
+    } else if (matchedByText.length > 1) {
+      // Ambiguous: multiple matching user turns, preserve agreed no-guessing contract
+      return null;
+    }
+  }
+
+  // If explicit target was requested but not found or ambiguous, reject immediately
+  if (hasExplicitTarget && !targetUserTurn) {
+    return null;
   }
 
   // 2. If target user turn found, find the model turn responding to THIS user turn
@@ -237,13 +258,12 @@ export function findTargetModelTurn(args?: { talkId?: string; text?: string }): 
     return candidate;
   }
 
-  // 3. Fallback when args is omitted (e.g. unit testing single turn)
-  const newModelTurns = modelTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
-  if (newModelTurns.length === 1) {
-    return newModelTurns[0];
-  }
-  if (newModelTurns.length === 0 && modelTurns.length > 0) {
-    return modelTurns[modelTurns.length - 1];
+  // 3. Fallback ONLY when explicit target (talkId/text) is completely omitted (e.g. standalone test of single turn)
+  if (!hasExplicitTarget) {
+    const newModelTurns = modelTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
+    if (newModelTurns.length === 1) {
+      return newModelTurns[0];
+    }
   }
 
   // Ambiguous: multiple model turns exist without target user turn binding
