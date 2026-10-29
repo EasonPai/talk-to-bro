@@ -36,7 +36,7 @@ export interface TalkFailure {
 }
 
 export interface TalkHandoff {
-  status: 'pending' | 'deferred' | 'done' | 'partial';
+  status: 'pending' | 'deferred' | 'done' | 'partial' | 'cancelled';
   copied: boolean;
   focused: boolean;
 }
@@ -81,6 +81,11 @@ export interface SessionV1Storage {
   };
 }
 
+export interface DebugV1Storage {
+  forceFailure?: FailureCode;
+  verbose?: boolean;
+}
+
 export interface BroChatRef {
   url: string;
   chatId: string;
@@ -105,7 +110,7 @@ export interface ValidateBroChatUrlResult {
 // BroAdapter interfaces for runner decoupling
 export type ReadyResult =
   | { ok: true; editorHasOwnText: boolean }
-  | { ok: false; code: 'NOT_SIGNED_IN' | 'BRO_CHAT_MISSING' | 'INPUT_NOT_FOUND' | 'EDITOR_BUSY' | 'QUOTA_EXHAUSTED' };
+  | { ok: false; code: FailureCode };
 
 export type SendResult =
   | { ok: true }

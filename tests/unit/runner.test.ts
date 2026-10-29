@@ -603,3 +603,92 @@ test('Talk Runner - CTO Review 2 Probe 3: Late checkReady rejection on recovery 
   assert.equal(logEntry?.result, 'send_failed');
   assert.equal(logEntry?.at, 20000);
 });
+
+test('Talk Runner - Fault injection via debug:v1.forceFailure in submitTalk', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await h.runner.boot();
+
+  // Inject SUBMIT_UNCONFIRMED
+  await h.storageLocal.set({
+    'debug:v1': { forceFailure: 'SUBMIT_UNCONFIRMED' }
+  });
+
+  const res = await h.runner.submit('Fault injection test 1');
+  assert.equal(res.accepted, true);
+  assert.equal(res.talk?.phase, 'failed');
+  assert.equal(res.talk?.failure?.code, 'SUBMIT_UNCONFIRMED');
+  assert.equal(res.talk?.failure?.stage, 'send');
+
+  // Verify forceFailure was consumed and removed
+  const debugAfter = (await h.storageLocal.get('debug:v1'))['debug:v1'];
+  assert.equal(debugAfter.forceFailure, undefined);
+
+  // Now inject read-stage QUOTA_EXHAUSTED
+  await h.storageLocal.set({
+    'debug:v1': { forceFailure: 'QUOTA_EXHAUSTED' }
+  });
+
+  const res2 = await h.runner.submit('Fault injection test 2');
+  assert.equal(res2.accepted, true);
+  assert.equal(res2.talk?.phase, 'failed');
+  assert.equal(res2.talk?.failure?.code, 'QUOTA_EXHAUSTED');
+  assert.equal(res2.talk?.failure?.stage, 'read');
+});
+
+test('Talk Runner - Fault injection via debug:v1.forceFailure in tick', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await h.runner.boot();
+
+  const subRes = await h.runner.submit('Normal submit');
+  assert.equal(subRes.accepted, true);
+  assert.equal(subRes.talk?.phase, 'waiting');
+
+  // Inject TAB_UNRESPONSIVE during active waiting tick
+  await h.storageLocal.set({
+    'debug:v1': { forceFailure: 'TAB_UNRESPONSIVE' }
+  });
+
+  const tickTalk = await h.runner.tick();
+  assert.equal(tickTalk?.phase, 'failed');
+  assert.equal(tickTalk?.failure?.code, 'TAB_UNRESPONSIVE');
+  assert.equal(tickTalk?.failure?.stage, 'read');
+
+  const debugAfter = (await h.storageLocal.get('debug:v1'))['debug:v1'];
+  assert.equal(debugAfter.forceFailure, undefined);
+});
+
+test('Talk Runner - Real boot restart marks unfinished Talk as INTERRUPTED with deferred handoff', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+
+  // Seed storage with an active waiting Talk from a previous browser session
+  const activeTalk = {
+    id: 'talk-restart-deferred',
+    text: 'Restart deferred test',
+    phase: 'waiting' as const,
+    createdAt: 1000,
+    updatedAt: 1000,
+    phaseDeadlineAt: 31000,
+    sentAt: 1020,
+    tabId: 50
+  };
+  await h.storageLocal.set({ 'runtime:v1': { lastTalk: activeTalk, logByTalkId: {} } });
+
+  // Fresh boot with new session (session storage is empty)
+  const bootResult = await h.runner.boot();
+  assert.equal(bootResult.isNewBrowserSession, true);
+
+  const runtime = await getRuntimeStorage(h.storageLocal);
+  const talk = runtime.lastTalk;
+  assert.equal(talk?.phase, 'failed');
+  assert.equal(talk?.failure?.code, 'INTERRUPTED');
+  assert.equal(talk?.failure?.stage, 'read');
+  assert.equal(talk?.handoff?.status, 'deferred', 'Handoff must be deferred on restart');
+  assert.equal(talk?.handoff?.copied, false);
+  assert.equal(talk?.handoff?.focused, false);
+});

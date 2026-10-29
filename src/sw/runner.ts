@@ -23,6 +23,10 @@ import { evaluateTick, TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
 import { validateBroChatUrl } from '../shared/validate.ts';
 import { reconcile } from './reconcile.ts';
 import { getBootReadyPromise, type BootResult } from './boot.ts';
+import { performHandoff } from './handoff.ts';
+import { getFailureInfo } from '../shared/failures.ts';
+import type { DebugV1Storage } from '../shared/types.ts';
+import type { TabsApiLike } from './tab.ts';
 
 export interface AlarmsLike {
   create(name: string, alarmInfo: { periodInMinutes?: number; delayInMinutes?: number }): void;
@@ -31,10 +35,14 @@ export interface AlarmsLike {
 
 export interface RunnerDeps {
   storageLocal: StorageAreaLike;
-  storageSession: StorageAreaLike;
+  storageSession?: StorageAreaLike;
   adapter: BroAdapter;
   alarms?: AlarmsLike;
   clock?: () => number;
+  tabsApi?: TabsApiLike;
+  windowsApi?: any;
+  runtimeApi?: any;
+  offscreenApi?: any;
 }
 
 export class SerializedMutex {
@@ -49,10 +57,14 @@ export class SerializedMutex {
 
 export class TalkRunner {
   private storageLocal: StorageAreaLike;
-  private storageSession: StorageAreaLike;
+  private storageSession?: StorageAreaLike;
   private adapter: BroAdapter;
   private alarms?: AlarmsLike;
-  private now: () => number;
+  private clock: () => number;
+  private tabsApi?: TabsApiLike;
+  private windowsApi?: any;
+  private runtimeApi?: any;
+  private offscreenApi?: any;
   private mutex = new SerializedMutex();
   private consecutiveDone = 0;
 
@@ -61,7 +73,34 @@ export class TalkRunner {
     this.storageSession = deps.storageSession;
     this.adapter = deps.adapter;
     this.alarms = deps.alarms;
-    this.now = deps.clock || (() => Date.now());
+    this.clock = deps.clock || (() => Date.now());
+    this.tabsApi = deps.tabsApi;
+    this.windowsApi = deps.windowsApi;
+    this.runtimeApi = deps.runtimeApi;
+    this.offscreenApi = deps.offscreenApi;
+  }
+
+  now(): number {
+    return this.clock();
+  }
+
+  private async handleFailure(talk: Talk, code: FailureCode, now: number, maybeSent?: boolean): Promise<Talk> {
+    let failedTalk = transition(talk, { type: 'FAIL', code, maybeSent }, now);
+    await finalizeTerminalTalk(this.storageLocal, failedTalk, now);
+    this.alarms?.clear('ttb-watchdog');
+    performHandoff(
+      {
+        storageLocal: this.storageLocal,
+        storageSession: this.storageSession,
+        adapter: this.adapter,
+        tabsApi: this.tabsApi,
+        windowsApi: this.windowsApi,
+        runtimeApi: this.runtimeApi,
+        offscreenApi: this.offscreenApi
+      },
+      failedTalk
+    ).catch(err => console.warn('[TalkRunner] Handoff execution error:', err));
+    return failedTalk;
   }
 
   getMutex(): SerializedMutex {
@@ -89,12 +128,28 @@ export class TalkRunner {
         return { accepted: false, reason: 'EMPTY' };
       }
 
+      // Check debug:v1.forceFailure
+      const debugData = (await this.storageLocal.get('debug:v1'))?.['debug:v1'] as DebugV1Storage | undefined;
+      if (debugData?.forceFailure) {
+        const forcedCode = debugData.forceFailure;
+        await this.storageLocal.set({ 'debug:v1': { ...debugData, forceFailure: undefined } });
+
+        let talk = createTalk(text, now);
+        const failureInfo = getFailureInfo(forcedCode);
+        if (failureInfo.defaultStage === 'read') {
+          talk = transition(talk, { type: 'TAB_RESOLVED', tabId: 1 }, now);
+          talk = transition(talk, { type: 'SUBMITTING' }, now);
+          talk = transition(talk, { type: 'SUBMIT_CONFIRMED', sentAt: now }, now);
+        }
+        const failedTalk = await this.handleFailure(talk, forcedCode, now);
+        return { accepted: true, talk: failedTalk };
+      }
+
       const settings = await getSettingsStorage(this.storageLocal);
       if (!settings?.broChatUrl) {
         let talk = createTalk(text, now);
-        talk = transition(talk, { type: 'FAIL', code: 'NO_BRO_CHAT' }, now);
-        await finalizeTerminalTalk(this.storageLocal, talk, now);
-        return { accepted: true, talk };
+        const failedTalk = await this.handleFailure(talk, 'NO_BRO_CHAT', now);
+        return { accepted: true, talk: failedTalk };
       }
 
       let talk = createTalk(text, now);
@@ -148,10 +203,7 @@ export class TalkRunner {
       }
 
       if (!ready.ok) {
-        talk = transition(talk, { type: 'FAIL', code: ready.code }, this.now());
-        await finalizeTerminalTalk(this.storageLocal, talk, this.now());
-        this.alarms?.clear('ttb-watchdog');
-        return talk;
+        return this.handleFailure(talk, ready.code, this.now());
       }
 
       // AWAIT SUBMITTING WRITE-AHEAD PRIOR TO SEND ACTION DISPATCH
@@ -184,10 +236,7 @@ export class TalkRunner {
       if (!talk || talk.id !== talkId || talk.phase !== 'submitting') return talk;
 
       if (!sendResult.ok) {
-        talk = transition(talk, { type: 'FAIL', code: sendResult.code }, this.now());
-        await finalizeTerminalTalk(this.storageLocal, talk, this.now());
-        this.alarms?.clear('ttb-watchdog');
-        return talk;
+        return this.handleFailure(talk, sendResult.code, this.now());
       }
 
       const sentTime = this.now();
@@ -205,6 +254,20 @@ export class TalkRunner {
   }
 
   async tick(): Promise<Talk | null> {
+    // 0. Check debug:v1.forceFailure during tick
+    const debugData = (await this.storageLocal.get('debug:v1'))?.['debug:v1'] as DebugV1Storage | undefined;
+    if (debugData?.forceFailure) {
+      const forcedCode = debugData.forceFailure;
+      await this.storageLocal.set({ 'debug:v1': { ...debugData, forceFailure: undefined } });
+      return this.mutex.run(async () => {
+        const now = this.now();
+        const runtime = await getRuntimeStorage(this.storageLocal);
+        let talk = runtime.lastTalk;
+        if (!talk || talk.phase === 'done' || talk.phase === 'failed') return null;
+        return this.handleFailure(talk, forcedCode, now);
+      });
+    }
+
     // 1. Atomic read and deadline check within mutex
     const talkToProcess = await this.mutex.run(async () => {
       const now = this.now();
@@ -216,26 +279,13 @@ export class TalkRunner {
       if (talk.phase === 'waiting') {
         const totalElapsed = now - (talk.sentAt ?? talk.createdAt);
         if (totalElapsed >= TOTAL_TIMEOUT_MS) {
-          talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_TOTAL' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return talk;
+          return this.handleFailure(talk, 'TIMEOUT_TOTAL', now);
         }
       }
 
       // Phase deadline check during watchdog tick for non-waiting phases (waiting is governed by evaluateTick)
       if (talk.phase !== 'waiting' && talk.phaseDeadlineAt !== null && now > talk.phaseDeadlineAt) {
-        talk = transition(
-          talk,
-          {
-            type: 'FAIL',
-            code: stageOf(talk.phase) === 'send' ? 'EDITOR_BUSY' : 'EXTRACT_FAILED'
-          },
-          now
-        );
-        await finalizeTerminalTalk(this.storageLocal, talk, now);
-        this.alarms?.clear('ttb-watchdog');
-        return talk;
+        return this.handleFailure(talk, stageOf(talk.phase) === 'send' ? 'EDITOR_BUSY' : 'EXTRACT_FAILED', now);
       }
 
       if (talk.phase !== 'waiting' && talk.phase !== 'extracting') {
@@ -265,8 +315,7 @@ export class TalkRunner {
         if (!talk || talk.id !== talkToProcess.id || talk.phase !== 'extracting') return talk;
 
         if ('error' in extractResult) {
-          talk = transition(talk, { type: 'FAIL', code: 'EXTRACT_FAILED' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
+          return this.handleFailure(talk, 'EXTRACT_FAILED', now);
         } else {
           talk = transition(talk, { type: 'STREAM_COMPLETE', answerMarkdown: extractResult.markdown }, now);
           await finalizeTerminalTalk(this.storageLocal, talk, now);
@@ -330,38 +379,23 @@ export class TalkRunner {
         }
 
         case 'timeout_idle': {
-          talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_IDLE' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return { action: 'terminal' as const, talk };
+          return { action: 'terminal' as const, talk: await this.handleFailure(talk, 'TIMEOUT_IDLE', now) };
         }
 
         case 'timeout_total': {
-          talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_TOTAL' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return { action: 'terminal' as const, talk };
+          return { action: 'terminal' as const, talk: await this.handleFailure(talk, 'TIMEOUT_TOTAL', now) };
         }
 
         case 'quota_exhausted': {
-          talk = transition(talk, { type: 'FAIL', code: 'QUOTA_EXHAUSTED' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return { action: 'terminal' as const, talk };
+          return { action: 'terminal' as const, talk: await this.handleFailure(talk, 'QUOTA_EXHAUSTED', now) };
         }
 
         case 'signed_out': {
-          talk = transition(talk, { type: 'FAIL', code: 'NOT_SIGNED_IN' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return { action: 'terminal' as const, talk };
+          return { action: 'terminal' as const, talk: await this.handleFailure(talk, 'NOT_SIGNED_IN', now) };
         }
 
         case 'wrong_chat': {
-          talk = transition(talk, { type: 'FAIL', code: 'BRO_CHAT_MISSING' }, now);
-          await finalizeTerminalTalk(this.storageLocal, talk, now);
-          this.alarms?.clear('ttb-watchdog');
-          return { action: 'terminal' as const, talk };
+          return { action: 'terminal' as const, talk: await this.handleFailure(talk, 'BRO_CHAT_MISSING', now) };
         }
       }
     });
@@ -382,14 +416,13 @@ export class TalkRunner {
         if (!t || t.id !== talk.id || t.phase !== 'extracting') return t;
 
         if ('error' in extractResult) {
-          t = transition(t, { type: 'FAIL', code: 'EXTRACT_FAILED' }, now);
-          await finalizeTerminalTalk(this.storageLocal, t, now);
+          return this.handleFailure(t, 'EXTRACT_FAILED', now);
         } else {
           t = transition(t, { type: 'STREAM_COMPLETE', answerMarkdown: extractResult.markdown }, now);
           await finalizeTerminalTalk(this.storageLocal, t, now);
+          this.alarms?.clear('ttb-watchdog');
+          return t;
         }
-        this.alarms?.clear('ttb-watchdog');
-        return t;
       });
     }
 

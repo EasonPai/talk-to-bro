@@ -213,4 +213,25 @@ export class RealBroAdapter implements BroAdapter {
       return { error: 'EXTRACT_FAILED', reason: e.message || 'Extract failed' };
     }
   }
+
+  async selfCheck(): Promise<Record<string, boolean>> {
+    const tabRes = await this.resolveTab();
+    if (!tabRes.ok || !tabRes.tabId) return { tab: false, contentScript: false };
+    try {
+      const resp = await this.sendMsg(tabRes.tabId, { action: 'TTB_PING' });
+      return { tab: true, contentScript: !!resp?.ok };
+    } catch {
+      return { tab: true, contentScript: false };
+    }
+  }
+
+  async showHandoffNotice(a: { message: string }): Promise<void> {
+    const tabRes = await this.resolveTab();
+    if (!tabRes.ok || !tabRes.tabId) return;
+    try {
+      await this.sendMsg(tabRes.tabId, { action: 'TTB_SHOW_HANDOFF_NOTICE', message: a.message });
+    } catch {
+      // non-fatal
+    }
+  }
 }

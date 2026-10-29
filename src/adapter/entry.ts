@@ -343,6 +343,89 @@ export function extract(args?: { talkId?: string; text?: string }) {
   return { markdown, html: rawHtml };
 }
 
+/**
+ * Injects a non-intrusive shadow DOM notice on the Gemini page explaining the failure and handoff.
+ */
+export function showHandoffNotice(message: string) {
+  if (typeof document === 'undefined') return;
+
+  let host = document.getElementById('ttb-handoff-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'ttb-handoff-host';
+    document.body.appendChild(host);
+  }
+
+  const shadow = host.shadowRoot || host.attachShadow({ mode: 'open' });
+  shadow.innerHTML = `
+    <style>
+      .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 2147483647;
+        background: #1e1f20;
+        color: #e3e3e3;
+        border: 1px solid #444746;
+        border-radius: 8px;
+        padding: 12px 16px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+        max-width: 420px;
+        animation: ttb-slide-in 0.2s ease-out;
+      }
+      .badge {
+        background: #004a77;
+        color: #c2e7ff;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 11px;
+      }
+      .msg {
+        flex: 1;
+      }
+      .close-btn {
+        background: transparent;
+        border: none;
+        color: #8e918f;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .close-btn:hover {
+        color: #e3e3e3;
+      }
+      @keyframes ttb-slide-in {
+        from { transform: translateY(-10px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+    </style>
+    <div class="toast">
+      <span class="badge">Pip</span>
+      <span class="msg">Pip 說：${message}</span>
+      <button class="close-btn" aria-label="Close">✕</button>
+    </div>
+  `;
+
+  const closeBtn = shadow.querySelector('.close-btn');
+  const toast = shadow.querySelector('.toast');
+  const dismiss = () => {
+    if (toast && toast.parentElement) {
+      toast.remove();
+    }
+  };
+
+  closeBtn?.addEventListener('click', dismiss);
+  setTimeout(dismiss, 12000);
+}
+
 // Runtime IIFE Initialization in Browser / ISOLATED World
 if (typeof window !== 'undefined') {
   const guardKey = `__ttb_${BUILD_ID}__`;
@@ -374,6 +457,12 @@ if (typeof window !== 'undefined') {
 
         if (msg.action === 'TTB_EXTRACT') {
           sendResponse(extract(msg));
+          return false;
+        }
+
+        if (msg.action === 'TTB_SHOW_HANDOFF_NOTICE') {
+          showHandoffNotice(msg.message || '');
+          sendResponse({ ok: true });
           return false;
         }
       });

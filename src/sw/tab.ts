@@ -6,6 +6,7 @@ import { getSessionStorage, saveSessionStorage } from '../shared/storage.ts';
 export interface EnsureBroTabResult {
   ok: boolean;
   tabId?: number;
+  windowId?: number;
   code?: 'NO_BRO_CHAT' | 'TAB_CLOSED' | 'TAB_UNRESPONSIVE' | 'INTERNAL';
   reason?: string;
 }
@@ -66,7 +67,7 @@ export async function ensureBroTab(
             if (!cachedTab.pinned) {
               await tabs.update(cachedTab.id!, { pinned: true });
             }
-            return { ok: true, tabId: cachedTab.id };
+            return { ok: true, tabId: cachedTab.id, windowId: cachedTab.windowId };
           }
         } catch {
           // Cached tab closed or gone, proceed to query
@@ -106,7 +107,7 @@ export async function ensureBroTab(
         }
       }
 
-      return { ok: true, tabId: tab.id };
+      return { ok: true, tabId: tab.id, windowId: tab.windowId };
     }
   }
 
@@ -160,5 +161,5 @@ export async function ensureBroTab(
     }
   }
 
-  return { ok: true, tabId };
+  return { ok: true, tabId, windowId: newTab.windowId };
 }

@@ -8,11 +8,13 @@
     "test": "node --experimental-test-coverage --test 'tests/unit/**/*.test.*'",
     "verify": "node scripts/test-m1-suite.js",
     "verify:m3": "node scripts/test-m3-suite.js",
-    "verify:m4": "node scripts/test-m4-suite.js"
+    "verify:m4": "node scripts/test-m4-suite.js",
+    "verify:m5": "node scripts/test-m5-suite.js"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.306",
     "@types/dompurify": "^3.0.5",
+    "@types/node": "^26.6.6",
     "@types/turndown": "^5.0.6",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.3"

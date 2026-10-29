@@ -5,6 +5,8 @@ import { TalkRunner } from './runner.ts';
 import { getRuntimeStorage, getSettingsStorage } from '../shared/storage.ts';
 import { computeStats } from '../shared/stats.ts';
 import { RealBroAdapter } from './adapter-real.ts';
+import { performHandoff } from './handoff.ts';
+import type { Talk } from '../shared/types.ts';
 
 const ALARM_NAME = 'ttb-watchdog';
 
@@ -13,7 +15,7 @@ const realAdapter = new RealBroAdapter({
   getTargetUrl: async () => {
     try {
       const settings = await getSettingsStorage(chrome.storage?.local);
-      return settings.broChatUrl;
+      return settings?.broChatUrl || null;
     } catch {
       return null;
     }
@@ -93,6 +95,55 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
       const runtime = await getRuntimeStorage(chrome.storage.local);
       const stats = computeStats(runtime.logByTalkId);
       sendResponse({ ok: true, stats });
+    })();
+    return true;
+  }
+
+  if (msg.action === 'handoff/switch_tab') {
+    (async () => {
+      await readyPromise;
+      const runtime = await getRuntimeStorage(chrome.storage.local);
+      if (runtime.lastTalk && runtime.lastTalk.id === msg.talkId) {
+        const handoff = await performHandoff(
+          {
+            storageLocal: chrome.storage.local,
+            storageSession: chrome.storage.session,
+            adapter: realAdapter
+          },
+          runtime.lastTalk,
+          { forceClosed: true, alreadyCopied: !!msg.alreadyCopied }
+        );
+        sendResponse({ ok: true, handoff });
+      } else {
+        sendResponse({ ok: false, error: 'TALK_NOT_FOUND' });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.action === 'handoff/cancel') {
+    (async () => {
+      await readyPromise;
+      const runtime = await getRuntimeStorage(chrome.storage.local);
+      if (runtime.lastTalk && runtime.lastTalk.id === msg.talkId) {
+        const updatedTalk: Talk = {
+          ...runtime.lastTalk,
+          handoff: {
+            status: 'cancelled',
+            copied: false,
+            focused: false
+          }
+        };
+        await chrome.storage.local.set({
+          'runtime:v1': {
+            ...runtime,
+            lastTalk: updatedTalk
+          }
+        });
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false, error: 'TALK_NOT_FOUND' });
+      }
     })();
     return true;
   }
