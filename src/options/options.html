@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Talk To Bro Personally - Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-group">
+        <span class="pip-avatar">🦊</span>
+        <div>
+          <h1>Talk To Bro Personally</h1>
+          <p class="subtitle">設定與老大（Gemini）專屬對話的秘密基地</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="card">
+        <h2>Bro Chat 網址設定 (F6)</h2>
+        <p class="desc">
+          請提供已啟用翻譯 Skill 的 Gemini 對話完整網址（例如：<code>https://gemini.google.com/app/4d870f290f0c5975</code>）。
+          Pip 會在背景為你把單字悄悄遞給老大。
+        </p>
+
+        <div class="form-group">
+          <label for="bro-url-input">Bro Chat 完整網址：</label>
+          <input
+            type="url"
+            id="bro-url-input"
+            placeholder="https://gemini.google.com/app/..."
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <div id="url-status" class="status-msg"></div>
+        </div>
+
+        <div class="button-row">
+          <button id="save-btn" class="btn primary">儲存設定</button>
+          <button id="check-ready-btn" class="btn secondary">Pip 去敲門 (測試連線)</button>
+        </div>
+      </section>
+
+      <section class="card shortcuts-card">
+        <h2>全域快捷鍵 (F1)</h2>
+        <p class="desc">預設呼叫 Pip 的全域快捷鍵為：</p>
+        <div class="shortcut-badge">
+          <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>
+        </div>
+        <p class="hint">若需自訂快捷鍵，請至 Chrome 的 <code>chrome://extensions/shortcuts</code> 設定頁進行修改。</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Talk To Bro Personally v0.1.0 • Built with Roguelike Spirit</span>
+    </footer>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "talk-to-bro-personally",
+  "version": "0.1.0",
+  "description": "Chrome MV3 Extension for Talk To Bro Personally",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/unit/*.test.js tests/unit/*.test.mjs",
+    "verify": "node scripts/test-m1-suite.js"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.306",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3"
+  }
+}
