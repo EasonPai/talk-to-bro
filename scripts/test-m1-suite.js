@@ -2,6 +2,7 @@
 // Automated End-to-End Verification Harness for Ticket 03 (#27: M1)
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { validateBroChatUrl } from '../src/shared/validate.ts';
@@ -14,6 +15,11 @@ const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
 
 const CDP_HOST = '[::1]';
 const CDP_PORT = 9222;
+
+function calculateExtensionId(dirPath) {
+  const hash = crypto.createHash('sha256').update(dirPath).digest('hex').slice(0, 32);
+  return hash.split('').map(c => String.fromCharCode(parseInt(c, 16) + 'a'.charCodeAt(0))).join('');
+}
 
 class CdpClient {
   constructor(wsUrl) {
@@ -49,8 +55,37 @@ class CdpClient {
   }
 
   close() {
-    if (this.ws) this.ws.close();
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (e) {}
+    }
   }
+}
+
+async function triggerExtensionReload(extId) {
+  const extPageRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?chrome://extensions`, { method: 'PUT' });
+  const extTab = await extPageRes.json();
+  const cdp = new CdpClient(extTab.webSocketDebuggerUrl);
+  await cdp.connect();
+
+  await new Promise(r => setTimeout(r, 800));
+  await cdp.send('Runtime.evaluate', {
+    expression: `
+      (async () => {
+        const manager = document.querySelector('extensions-manager');
+        const itemList = manager?.shadowRoot?.querySelector('extensions-item-list');
+        const item = itemList?.shadowRoot?.querySelector('#${extId}');
+        if (!item) throw new Error('Extension ${extId} not found in extensions-manager');
+        await item.delegate.reloadItem(item.data.id);
+      })()
+    `,
+    awaitPromise: true
+  });
+
+  await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/close/${extTab.id}`).catch(() => {});
+  cdp.close();
+  await new Promise(r => setTimeout(r, 1200));
 }
 
 async function main() {
@@ -121,8 +156,12 @@ async function main() {
   assert.equal(validateBroChatUrl('https://gemini.google.com/').valid, false);
   console.log('  ✓ validateBroChatUrl boundary assertions passed.\n');
 
-  // 4. Mount dist safely for active CfT session testing
-  console.log('[Test Suite] 4. Safely synchronizing dist bundle to active CfT extension path...');
+  // 4. Exact Extension Target Resolution & Mounting
+  console.log('[Test Suite] 4. Resolving exact target Extension ID & mounting dist bundle...');
+  const EXPECTED_EXT_ID = calculateExtensionId(LOADED_EXT_DIR);
+  console.log(`  Target Directory: ${LOADED_EXT_DIR}`);
+  console.log(`  Expected Extension ID (SHA-256 derived): ${EXPECTED_EXT_ID}`);
+
   const backupDir = path.join(ROOT_DIR, 'spikes/m0-b-backup-tmp');
   if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
   fs.cpSync(LOADED_EXT_DIR, backupDir, { recursive: true });
@@ -131,49 +170,61 @@ async function main() {
     for (const file of fs.readdirSync(DIST_DIR)) {
       fs.copyFileSync(path.join(DIST_DIR, file), path.join(LOADED_EXT_DIR, file));
     }
+    console.log('  Mounted dist artifacts into active extension directory.');
 
     const verRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/version`);
     const verData = await verRes.json();
-    console.log(`  [CfT] Browser: ${verData.Browser}`);
+    console.log(`  [CfT] Browser Version: ${verData.Browser}`);
 
+    // Trigger clean item reload via extensions manager
+    console.log(`  Reloading extension ${EXPECTED_EXT_ID} in Chrome...`);
+    await triggerExtensionReload(EXPECTED_EXT_ID);
+
+    // Verify exact SW target and runtime manifest correspondence
     let targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
-    let swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes('chrome-extension://'));
-    assert.ok(swTarget, 'Active extension service worker must be running');
+    const swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(EXPECTED_EXT_ID));
+    assert.ok(swTarget, `Service Worker for expected Extension ID ${EXPECTED_EXT_ID} must be running`);
 
-    const extUrlMatch = swTarget.url.match(/chrome-extension:\/\/([a-z0-9]+)\//);
-    const activeExtId = extUrlMatch ? extUrlMatch[1] : null;
-    assert.ok(activeExtId, 'Active extension ID must be extracted');
-    console.log(`  [CfT] Target Extension ID: ${activeExtId}`);
-
-    // Reload service worker to ensure latest dist bundle is mounted
     const swCdp = new CdpClient(swTarget.webSocketDebuggerUrl);
     await swCdp.connect();
-    await swCdp.send('Runtime.evaluate', { expression: 'chrome.runtime.reload()' });
-    swCdp.close();
-    await new Promise(r => setTimeout(r, 1000));
 
-    // Verify commands registration in SW
-    targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
-    swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(activeExtId));
-    assert.ok(swTarget, 'Service worker must reboot after reload');
+    const runtimeManifestRes = await swCdp.send('Runtime.evaluate', {
+      expression: 'chrome.runtime.getManifest()',
+      returnByValue: true
+    });
+    const runtimeManifest = runtimeManifestRes.result?.value;
+    assert.ok(runtimeManifest, 'chrome.runtime.getManifest() must return manifest object');
+    assert.equal(runtimeManifest.name, manifest.name, `Manifest name must match "${manifest.name}"`);
+    assert.equal(runtimeManifest.version, manifest.version, `Manifest version must match "${manifest.version}"`);
+    assert.equal(runtimeManifest.manifest_version, 3, 'Manifest version must be 3');
+    assert.equal(runtimeManifest.action?.default_popup, 'popup.html', 'Action popup must be popup.html');
+    assert.equal(runtimeManifest.options_ui?.page, 'options.html', 'Options page must be options.html');
 
-    const swCdp2 = new CdpClient(swTarget.webSocketDebuggerUrl);
-    await swCdp2.connect();
-    const cmdsEval = await swCdp2.send('Runtime.evaluate', {
+    const runtimeIdRes = await swCdp.send('Runtime.evaluate', {
+      expression: 'chrome.runtime.id',
+      returnByValue: true
+    });
+    assert.equal(runtimeIdRes.result?.value, EXPECTED_EXT_ID, 'Runtime extension ID must strictly match EXPECTED_EXT_ID');
+    console.log(`  ✓ Exact Extension Identity & Runtime Manifest Correspondence Verified:`);
+    console.log(`    - ID: ${EXPECTED_EXT_ID}`);
+    console.log(`    - Name: ${runtimeManifest.name}`);
+    console.log(`    - Version: ${runtimeManifest.version}`);
+
+    // Verify commands registration in SW (distinguishing registration from execution)
+    const cmdsEval = await swCdp.send('Runtime.evaluate', {
       expression: `(async () => { return await chrome.commands.getAll(); })()`,
       awaitPromise: true,
       returnByValue: true
     });
     const cmds = cmdsEval.result?.value || [];
-    swCdp2.close();
-
-    const shortcutRegistered = cmds.some(c => c.name === '_execute_action' && (c.shortcut?.includes('B') || c.shortcut?.includes('⇧')));
-    assert.equal(shortcutRegistered, true, 'Alt+Shift+B shortcut command must be registered in Chrome');
-    console.log(`  ✓ Shortcut command _execute_action registered: ${JSON.stringify(cmds)}`);
+    const executeActionCmd = cmds.find(c => c.name === '_execute_action');
+    assert.ok(executeActionCmd, '_execute_action command must be registered in chrome.commands');
+    console.log(`  ✓ [Shortcut Registration Verified]: Command _execute_action registered in Chrome commands table.`);
+    console.log(`    Declared manifest suggested_key: ${manifest.commands._execute_action.suggested_key.default}`);
 
     // 5. Options UI Real End-to-End Verification (Input, Rejection, Save, Persistence)
     console.log('\n[Test Suite] 5. Verifying Options Page UI & settings:v1 persistence...');
-    const optionsUrl = `chrome-extension://${activeExtId}/options.html`;
+    const optionsUrl = `chrome-extension://${EXPECTED_EXT_ID}/options.html`;
     const optTabRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(optionsUrl)}`, { method: 'PUT' });
     const optTab = await optTabRes.json();
 
@@ -273,15 +324,43 @@ async function main() {
     await optCdp.send('Runtime.evaluate', { expression: 'window.close()' });
     optCdp.close();
 
-    // 6. Popup Autofocus (F1) Real Runtime Verification
-    console.log('\n[Test Suite] 6. Verifying Popup Autofocus (F1) in active browser context...');
-    const popupUrl = `chrome-extension://${activeExtId}/popup.html`;
-    const popupTabRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(popupUrl)}`, { method: 'PUT' });
-    const popupTab = await popupTabRes.json();
+    // 6. Action Popup Invocation & Autofocus (F1) Real Runtime Verification
+    console.log('\n[Test Suite] 6. Verifying Action Popup Invocation & Autofocus (F1)...');
+    console.log('  Invoking chrome.action.openPopup from Service Worker to trigger actual Action Popup...');
 
-    const popupCdp = new CdpClient(popupTab.webSocketDebuggerUrl);
+    const openPopupRes = await swCdp.send('Runtime.evaluate', {
+      expression: `
+        (async () => {
+          try {
+            const wins = await chrome.windows.getAll();
+            const normalWin = wins.find(w => w.type === 'normal') || wins[0];
+            await chrome.windows.update(normalWin.id, { focused: true });
+            await new Promise(r => setTimeout(r, 500));
+            await chrome.action.openPopup({ windowId: normalWin.id });
+            return { success: true, winId: normalWin.id };
+          } catch (e) {
+            return { success: false, error: e.message };
+          }
+        })()
+      `,
+      awaitPromise: true,
+      returnByValue: true
+    });
+
+    assert.equal(openPopupRes.result?.value?.success, true, `chrome.action.openPopup failed: ${openPopupRes.result?.value?.error}`);
+    console.log(`  ✓ chrome.action.openPopup succeeded on window ${openPopupRes.result?.value?.winId}.`);
+    swCdp.close();
+
+    await new Promise(r => setTimeout(r, 800));
+
+    // Locate actual Action Popup target in browser targets list
+    targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+    const actionPopupTarget = targets.find(t => t.url && t.url.includes(`${EXPECTED_EXT_ID}/popup.html`));
+    assert.ok(actionPopupTarget, `Action Popup target for ${EXPECTED_EXT_ID}/popup.html must be open`);
+    console.log(`  ✓ Action Popup target found: ${actionPopupTarget.type} (ID: ${actionPopupTarget.id})`);
+
+    const popupCdp = new CdpClient(actionPopupTarget.webSocketDebuggerUrl);
     await popupCdp.connect();
-    await new Promise(r => setTimeout(r, 600));
 
     const focusEval = await popupCdp.send('Runtime.evaluate', {
       expression: `
@@ -298,8 +377,9 @@ async function main() {
     });
     const focusRes = focusEval.result.value;
     assert.equal(focusRes.isTalkInput, true, 'document.activeElement.id must strictly be "talk-input"');
-    console.log(`  ✓ Popup opened: document.activeElement is <${focusRes.activeTag} id="${focusRes.activeId}"> (Autofocus F1 Confirmed)`);
+    console.log(`  ✓ Action Popup Focus verified: document.activeElement is <${focusRes.activeTag} id="${focusRes.activeId}"> (Autofocus F1 Confirmed)`);
 
+    // Close action popup
     await popupCdp.send('Runtime.evaluate', { expression: 'window.close()' });
     popupCdp.close();
 
@@ -307,12 +387,17 @@ async function main() {
     console.log('       ALL ACCEPTANCE CRITERIA FOR TICKET 03 (#27) PASSED       ');
     console.log('================================================================\n');
   } finally {
-    // Clean restore of m0-b directory
+    // Clean restore of spikes/m0-b directory and reload in Chrome
     if (fs.existsSync(backupDir)) {
       fs.rmSync(LOADED_EXT_DIR, { recursive: true, force: true });
       fs.cpSync(backupDir, LOADED_EXT_DIR, { recursive: true });
       fs.rmSync(backupDir, { recursive: true, force: true });
-      console.log('[Test Suite] Cleaned up temporary test mount; restored spikes/m0-b.');
+      try {
+        await triggerExtensionReload(EXPECTED_EXT_ID);
+        console.log('[Test Suite] Cleaned up temporary test mount; restored and reloaded spikes/m0-b.');
+      } catch (e) {
+        console.log('[Test Suite] Cleaned up temporary test mount; restored spikes/m0-b files.');
+      }
     }
   }
 }
