@@ -5,38 +5,43 @@
 - **Ticket**: [GitHub Issue #31: [talk-to-bro-personally] 07: M5 — Failure Detection Matrix, Watchdog Recovery & Offscreen Handoff](https://github.com/EasonPai/agentic-development/issues/31)
 - **Assignee**: Engineer (`term_b7d9f995-f715-4d80-a6c1-9eb3991c39f7`)
 - **Reviewers**: CTO (`term_c7268128-7eab-4ebe-80cc-eb8a142462c1`), PM (`term_29805068-4138-43f3-b3f4-97d1608f46af`)
-- **Status**: Draft Submitted for Review.
+- **Status**: Plan Approved by CTO with Technical Amendments; Proceeding to Implementation.
 
 ---
 
 ## 1. Objective & Scope
 
-Implement a comprehensive, resilient failure detection and handoff architecture for Talk to Bro Personally. Ensure all 14 `FailureCode`s map exhaustively to human-centered Pip emotional states and clear user-facing messages with compile-time type exhaustiveness. Enforce strict 30s idle and 180s total watchdog timeout boundaries. Provide seamless dual-path Handoff: an interactive 1.5s countdown notice with cancellation when the Action Popup is open, and automated offscreen document clipboard copying with tab switching and a non-intrusive shadow DOM notice on the Gemini page when the Popup is closed. Guarantee zero focus jumps on browser restart by marking Handoff as deferred, and verify all 14 error paths using `debug:v1.forceFailure` fault injection (F4).
+Implement a comprehensive, resilient failure detection and handoff architecture for Talk to Bro Personally. Ensure all 14 `FailureCode`s map exhaustively to human-centered Pip emotional states and clear user-facing messages with compile-time type exhaustiveness (`never` check verified via `tsc --noEmit`). Enforce strict 30s idle and 180s total watchdog timeout boundaries. Provide seamless dual-path Handoff: an interactive 1.5s countdown notice with persistent cancellation when the Action Popup is open, and automated serialized offscreen document clipboard copying with tab switching and a non-intrusive shadow DOM notice on the Gemini page when the Popup is closed. Guarantee zero focus jumps on browser restart by marking Handoff as deferred, and verify all 14 error paths using `debug:v1.forceFailure` fault injection (F4).
 
-### In Scope (AC Alignment)
-1. **Exhaustive Failure Code Matrix (`src/shared/failures.ts`)**:
+### In Scope & CTO Contract Clarifications
+1. **Dynamic Stage & Exhaustive Failure Code Matrix (`src/shared/failures.ts`)**:
    - Maps all 14 `FailureCode`s (`NO_BRO_CHAT`, `BRO_CHAT_MISSING`, `NOT_SIGNED_IN`, `INPUT_NOT_FOUND`, `EDITOR_BUSY`, `SUBMIT_UNCONFIRMED`, `TIMEOUT_IDLE`, `TIMEOUT_TOTAL`, `QUOTA_EXHAUSTED`, `TAB_UNRESPONSIVE`, `TAB_CLOSED`, `EXTRACT_FAILED`, `INTERRUPTED`, `INTERNAL`).
-   - Guarantees compile-time completeness using TypeScript `never` exhaustiveness checking in `switch`.
-   - Maps each code to Pip emotional state (`'scared'` for unexpected errors, `'ignored'` for timeouts), human-facing message (per Tech Spec §4.1), stage (`'send'` vs `'read'`), and retryability.
+   - Guarantees compile-time completeness using TypeScript `never` exhaustiveness checking in `switch`, strictly verified with `tsc --noEmit`.
+   - **Dynamic Stage Accounting**: Stage (`'send'` vs `'read'`) is derived dynamically from the persisted Talk failure context (`talk.failure?.stage` or whether `sentAt` is present), NOT hardcoded per code. Specifically, `TAB_CLOSED`, `TAB_UNRESPONSIVE`, `INTERRUPTED`, and `INTERNAL` can occur at either stage.
+   - `retryable` is purely human-facing UI guidance; it NEVER enables automatic resubmission.
 2. **Stream Watchdog & Pure `evaluateTick` (`src/shared/tick.ts`)**:
    - Pure function strictly enforcing 30,000ms idle timeout (from last text growth / hash change) and 180,000ms total timeout from `sentAt`.
    - Text growth (length growth or signature change) immediately resets idle timer before timeout evaluation.
    - Settle stability check requires 2 consecutive non-generating complete probe signals.
 3. **Popup-Open Handoff Flow (`src/popup/popup.ts`)**:
-   - When failure occurs while Popup is open, displays Pip error mood and message, accompanied by a 1.5s visual countdown: "Pip 帶你去找老大… (1.5s)" and a "留在這裡" [Cancel] button.
+   - Displays Pip error mood and message.
+   - Starts 1.5s visual countdown ONLY for `pending` (non-deferred, non-cancelled) handoffs: "Pip 帶你去找老大… (1.5s)" with a "留在這裡" [Cancel] button.
+   - **Persistent Cancellation**: Clicking "留在這裡" persists `handoff.status = 'cancelled'` to storage so reopening/rerendering the popup does not restart the countdown.
    - If user does not cancel, writes Talk prompt text to clipboard via `navigator.clipboard.writeText`, requests Service Worker to switch to Bro Chat tab, and focuses the browser window.
-   - If user clicks "留在這裡", cancels the countdown and leaves the prompt text accessible in the Popup.
+   - SW validates that the Talk ID matches the current runtime Talk before committing state, preventing stale callback race conditions.
 4. **Popup-Closed Handoff Flow (`src/sw/handoff.ts`, `src/offscreen/clipboard.ts`)**:
-   - When failure occurs while Popup is closed:
+   - When failure occurs, checks `deferred` status first. If not deferred and no active POPUP context is found (checking `contexts.some(c => c.contextType === 'POPUP')`):
      - Sets action badge to `!`.
-     - Creates/reuses `offscreen.html` with reason `CLIPBOARD` to copy Talk prompt text via `execCommand('copy')`.
-     - Switches to Bro Chat tab (`active: true`) and focuses window (`focused: true`).
-     - Injects a non-intrusive Shadow DOM banner (`showHandoffNotice`) on the Gemini page explaining the failure and indicating text has been copied.
-     - For `NO_BRO_CHAT`, copies text to clipboard and opens Options page (`chrome.runtime.openOptionsPage()`).
+     - Serializes offscreen document lifecycle (single-operation lock).
+     - Launches `offscreen.html` with reason `CLIPBOARD`, sends message, and waits for explicit ACK before closing the document.
+     - Reuses existing `ensureBroTab` from `src/sw/tab.ts` (or opens Options page if `NO_BRO_CHAT`).
+     - Real-world observation: `copied` and `focused` reflect actual boolean outcomes; `handoff.status` is set to `'done'` only if both succeed, otherwise `'partial'`.
+     - Injects minimal Shadow DOM notice (`showHandoffNotice`) on Gemini page without scope-creeping into M6 pixel-art work.
 5. **Browser Restart Deferred Handoff (`src/sw/reconcile.ts`, `src/popup/popup.ts`)**:
    - In `reconcile` upon detecting a new browser session (`isNewBrowserSession = true`), transitions unfinished Talk to `INTERRUPTED` and sets `handoff.status = 'deferred'`.
-   - Never switches tabs or steals focus on boot.
-   - When user next opens the Popup, displays the interruption explanation and an autofocused "去找老大 ⏎" button.
+   - **Zero-jump guarantee**: Checks deferred status BEFORE branching into auto-handoff; never auto-copies, never switches tabs, and never steals focus on boot, even if popup is already open.
+   - When user next opens the Popup, displays the interruption explanation and an autofocused primary button: "去找老大 ⏎". Explicit user interaction authorizes deferred handoff execution.
+   - Real restart test exercises the actual `boot()` entry point with fresh boot sequence.
 6. **Fault Injection & Automated Verification (`debug:v1.forceFailure`)**:
    - Service Worker checks `debug:v1.forceFailure` in `storage.local`; if present, forces transition to the target `FailureCode`.
    - Verifies all 14 error paths produce non-blank Popup UI, valid clipboard contents, and active tab switching in automated unit and Chrome for Testing live test harnesses (`scripts/test-m5-suite.js`).
