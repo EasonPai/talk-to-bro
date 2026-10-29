@@ -4,30 +4,33 @@
     "name": "SW Watchdog, 3-min Survival & Reconcile Recovery",
     "passed": true,
     "realSwTerminatedAndRestarted": true,
-    "swTargetIdBefore": "C7710D49770E781D5403558BE7EDC7F1",
-    "swTargetIdAfter": "2FE26F5BD3530C11C305AD9C7ABC9346",
+    "swTargetIdBefore": "664C9DCA71C310F512A2F9D5C61FDCAB",
+    "swTargetIdAfter": "7A2D91C19D3FC24D5EE8181453FF42FE",
     "domSendExecutionCount": 0,
     "writeAheadMaintained": true,
     "submitAttemptCount": 1,
     "postBootPhase": "streaming",
     "reconcileStatus": "resumed_monitoring",
-    "timeoutExpiredStatus": "timed_out_total",
+    "timeoutExpiredViaAlarm": true,
+    "alarmCallbackFired": true,
+    "lastAlarmFiredAt": 1793237765370,
+    "lastAlarmName": "ttb-spike-watchdog",
     "watchdogAlarmRegistered": true,
     "alarms": [
       {
         "name": "ttb-spike-watchdog",
         "periodInMinutes": 1,
         "persistAcrossSessions": true,
-        "scheduledTime": 1793237658596.362
+        "scheduledTime": 1793237825371.011
       }
     ],
-    "details": "Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog."
+    "details": "Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), deadline TIMEOUT_TOTAL triggered via real chrome.alarms.onAlarm callback, and alarms watchdog."
   },
   "s6": {
     "test": "S6",
     "name": "Tab Discard / Freeze Recovery & Pinned Tab Reuse",
     "passed": true,
-    "tabId": 328112618,
+    "tabId": 328112634,
     "reused": true,
     "spawnedNew": false,
     "wasDiscardedBefore": true,
@@ -56,7 +59,7 @@
       "method": "execCommand"
     },
     "clipboardReadBackMatched": true,
-    "systemClipboardValue": "meticulous-handoff-1793237598158",
+    "systemClipboardValue": "meticulous-handoff-1793237761909",
     "offscreenClosed": true,
     "clipboardRestored": true,
     "details": "System clipboard verified via pbpaste (exact match), offscreen doc cleanly closed, and prior clipboard restored."

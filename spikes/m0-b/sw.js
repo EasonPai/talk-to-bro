@@ -1,20 +1,27 @@
 // sw.js - Service Worker for M0-B Spike (Watchdog, Reconcile, Offscreen & Discard Recovery)
 
 const ALARM_NAME = 'ttb-spike-watchdog';
+let lastAlarmFiredAt = 0;
+let lastAlarmName = null;
 
-// Initialize alarms watchdog
-chrome.alarms.get(ALARM_NAME, (alarm) => {
-  if (!alarm) {
-    chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
-    console.log('[SW-B] Alarms watchdog created.');
-  }
-});
+// Initialize alarms watchdog (ensure periodic 1-minute recurring alarm is set)
+function initWatchdogAlarm() {
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+  console.log('[SW-B] Alarms periodic watchdog initialized.');
+}
+initWatchdogAlarm();
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM_NAME) {
-    console.log('[SW-B] Watchdog alarm fired. Running reconcile...');
-    reconcile();
-  }
+  lastAlarmFiredAt = Date.now();
+  lastAlarmName = alarm.name;
+  console.log(`[SW-B] Watchdog alarm '${alarm.name}' fired at ${lastAlarmFiredAt}. Running reconcile...`);
+  // Ensure periodic watchdog alarm remains scheduled
+  chrome.alarms.get(ALARM_NAME, (existing) => {
+    if (!existing) {
+      chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1 });
+    }
+  });
+  reconcile();
 });
 
 // Auto-run reconcile on SW boot / restart
@@ -310,7 +317,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'CHECK_ALARMS') {
-    chrome.alarms.getAll((alarms) => sendResponse({ alarms }));
+    chrome.alarms.getAll((alarms) => sendResponse({ alarms, lastAlarmFiredAt, lastAlarmName }));
+    return true;
+  }
+  if (msg.action === 'TRIGGER_TEST_ALARM') {
+    // Schedule a test alarm with short delay (e.g. 1 second)
+    const testAlarmName = msg.name || 'ttb-test-alarm';
+    chrome.alarms.create(testAlarmName, { delayInMinutes: (msg.delayMs || 1000) / 60000 });
+    sendResponse({ ok: true, name: testAlarmName });
     return true;
   }
   if (msg.action === 'RUN_FULL_SUITE_B') {

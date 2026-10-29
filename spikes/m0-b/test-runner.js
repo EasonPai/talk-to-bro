@@ -622,19 +622,21 @@ async function main() {
   const writeAheadMaintained = (afterBootTalk?.submitAttemptCount === 1);
   console.log(`[Test Harness] After real SW termination & restart: submitAttemptCount=${afterBootTalk?.submitAttemptCount}, phase=${afterBootTalk?.phase}`);
 
-  // Phase 5D: Test 3-minute deadline expiration handling (phaseDeadlineAt in the past)
+  // Phase 5D: Test deadline expiration via real chrome.alarms callback (short 1s clock verification)
+  console.log('[Test Harness] Staging talk with short deadline and scheduling real alarm to trigger reconcile...');
+  const shortDeadlineTalkId = 'talk-alarm-timeout-' + Date.now();
   await cdp.send('Runtime.evaluate', {
     expression: `
       (async () => {
         return await chrome.runtime.sendMessage({
           action: 'SAVE_TALK',
           talk: {
-            id: 'talk-timeout-${Date.now()}',
-            text: '3-min timeout test',
+            id: '${shortDeadlineTalkId}',
+            text: 'short clock alarm callback test',
             phase: 'streaming',
             tabId: ${numericTabId},
             submitAttemptCount: 1,
-            phaseDeadlineAt: Date.now() - 3000 // Expired deadline (3 minutes past)
+            phaseDeadlineAt: Date.now() + 500 // expires in 0.5s
           }
         });
       })()
@@ -643,28 +645,55 @@ async function main() {
     returnByValue: true
   });
 
-  const timeoutReconcileEval = await cdp.send('Runtime.evaluate', {
-    expression: `(async () => { return await chrome.runtime.sendMessage({ action: 'RUN_RECONCILE' }); })()`,
+  // Schedule real alarm to fire in 1000ms
+  await cdp.send('Runtime.evaluate', {
+    expression: `
+      (async () => {
+        return await chrome.runtime.sendMessage({
+          action: 'TRIGGER_TEST_ALARM',
+          name: 'ttb-spike-watchdog',
+          delayMs: 1000
+        });
+      })()
+    `,
     awaitPromise: true,
     returnByValue: true
   });
-  const timeoutReconcile = timeoutReconcileEval.result?.value;
 
-  // Phase 5E: Check watchdog alarm is registered
+  // Wait 1500ms for chrome.alarms.onAlarm to genuinely fire and execute reconcile()
+  console.log('[Test Harness] Awaiting real chrome.alarms.onAlarm callback execution (1500ms)...');
+  await new Promise(r => setTimeout(r, 1500));
+
+  // Verify Talk state was transitioned to timed_out_total via real alarm callback (no manual RUN_RECONCILE)
+  const alarmResultEval = await cdp.send('Runtime.evaluate', {
+    expression: `(async () => { return await chrome.runtime.sendMessage({ action: 'GET_TALK' }); })()`,
+    awaitPromise: true,
+    returnByValue: true
+  });
+  const talkAfterAlarm = alarmResultEval.result?.value?.talk;
+  const timeoutExpiredViaAlarm = (talkAfterAlarm?.phase === 'failed' && talkAfterAlarm?.error === 'TIMEOUT_TOTAL');
+  console.log(`[Test Harness] After real alarm callback: phase=${talkAfterAlarm?.phase}, error=${talkAfterAlarm?.error} (transitioned via alarm: ${timeoutExpiredViaAlarm})`);
+
+  // Phase 5E: Check watchdog alarm registration & real callback record
   const alarmsEval = await cdp.send('Runtime.evaluate', {
     expression: `(async () => { return await chrome.runtime.sendMessage({ action: 'CHECK_ALARMS' }); })()`,
     awaitPromise: true,
     returnByValue: true
   });
-  const alarms = alarmsEval.result?.value?.alarms || [];
+  const alarmCheckData = alarmsEval.result?.value || {};
+  const alarms = alarmCheckData.alarms || [];
+  const lastAlarmFiredAt = alarmCheckData.lastAlarmFiredAt || 0;
+  const lastAlarmName = alarmCheckData.lastAlarmName || null;
   const watchdogAlarmRegistered = alarms.some(a => a.name === 'ttb-spike-watchdog');
+  const alarmCallbackFired = (lastAlarmFiredAt > 0 && lastAlarmName === 'ttb-spike-watchdog');
 
   const s5Passed = Boolean(
     swProcessReborn &&
     domSendCountMaintained &&
     writeAheadMaintained &&
-    timeoutReconcile.status === 'timed_out_total' &&
-    watchdogAlarmRegistered
+    timeoutExpiredViaAlarm &&
+    watchdogAlarmRegistered &&
+    alarmCallbackFired
   );
 
   const s5Result = {
@@ -679,10 +708,13 @@ async function main() {
     submitAttemptCount: afterBootTalk?.submitAttemptCount,
     postBootPhase: afterBootTalk?.phase,
     reconcileStatus: afterBootTalk?.phase === 'streaming' ? 'resumed_monitoring' : afterBootTalk?.phase,
-    timeoutExpiredStatus: timeoutReconcile.status,
+    timeoutExpiredViaAlarm,
+    alarmCallbackFired,
+    lastAlarmFiredAt,
+    lastAlarmName,
     watchdogAlarmRegistered,
     alarms,
-    details: 'Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), 3-min deadline TIMEOUT_TOTAL, and alarms watchdog.'
+    details: 'Verified real SW termination & restart (distinct CDP target ID), DOM send count=0 (zero duplicate submit), deadline TIMEOUT_TOTAL triggered via real chrome.alarms.onAlarm callback, and alarms watchdog.'
   };
 
   // -------------------------------------------------------------
