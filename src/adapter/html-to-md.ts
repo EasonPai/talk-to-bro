@@ -19,9 +19,6 @@ export function createTurndownInstance(): TurndownService {
   // Attach GitHub Flavored Markdown (tables, strikethrough, task lists)
   turndown.use(gfm);
 
-  // Preserve Markdown syntax characters in Gemini text without unnecessary escaping
-  turndown.escape = (str: string) => str;
-
   // Custom rule: Paragraph inside list item should not introduce excessive blank lines
   turndown.addRule('paragraphInListItem', {
     filter: (node) => node.nodeName === 'P' && !!node.parentNode && node.parentNode.nodeName === 'LI',
@@ -66,7 +63,7 @@ export function createTurndownInstance(): TurndownService {
     }
   });
 
-  // Custom rule: Gemini fenced code block with language attribute preserving indentation
+  // Custom rule: Gemini fenced code block with language attribute strictly preserving indentation and content
   turndown.addRule('geminiCodeBlock', {
     filter: (node) => node.nodeName === 'PRE',
     replacement: (_content, node) => {
@@ -74,14 +71,20 @@ export function createTurndownInstance(): TurndownService {
       const codeText = code ? code.textContent : node.textContent;
       const langMatch = code && code.className ? code.className.match(/language-(\w+)/) : null;
       const lang = langMatch ? langMatch[1] : '';
-      return '\n\n```' + lang + '\n' + (codeText || '').trim() + '\n```\n\n';
+      let text = codeText || '';
+      // Strip only leading newline immediately following <code>
+      if (text.startsWith('\n')) text = text.slice(1);
+      else if (text.startsWith('\r\n')) text = text.slice(2);
+      // Ensure single trailing newline before closing fence
+      if (!text.endsWith('\n')) text += '\n';
+      return '\n\n```' + lang + '\n' + text + '```\n\n';
     }
   });
 
-  // Custom rule: sup element preservation
+  // Custom rule: sup element preservation with unescaped bracket indicators
   turndown.addRule('sup', {
     filter: 'sup',
-    replacement: (content) => content
+    replacement: (content) => content.replace(/\\\[/g, '[').replace(/\\\]/g, ']')
   });
 
   return turndown;
@@ -127,7 +130,7 @@ export function htmlToMarkdown(htmlStringOrElement: string | HTMLElement): strin
   }
 
   // Pre-process text newlines to <br> outside <pre>
-  if (typeof document !== 'undefined') {
+  if (typeof document !== 'undefined' && typeof NodeFilter !== 'undefined' && typeof document.createTreeWalker === 'function') {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes: Text[] = [];
     let current: Node | null;

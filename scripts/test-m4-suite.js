@@ -161,6 +161,14 @@ async function main() {
   assert.ok(!citMd.includes('share'), 'UI buttons and icons must be stripped');
   console.log('  ✓ [Citations Pass]: Citations preserved and internal thought/UI noise stripped.\n');
 
+  // 5. Code Indentation & Literal Metacharacter Regressions
+  console.log('[Static Check] 5. Verifying Code Indentation & Literal Metacharacters...');
+  const probeCode = htmlToMarkdown('<pre><code class="language-python">    return 42\n\n</code></pre>');
+  assert.equal(probeCode, '```python\n    return 42\n\n```', 'First-line code indentation and trailing newlines must be preserved');
+  const probeStar = htmlToMarkdown('<p>literal *star*</p>');
+  assert.equal(probeStar, 'literal \\*star\\*', 'Literal asterisks must be escaped to prevent false italicization');
+  console.log('  ✓ [Regression Pass]: First-line code indentation and literal Markdown metacharacter escaping verified.\n');
+
   // ===========================================================================
   // SECTION B: LIVE ISOLATED-CFT ACTION POPUP EXECUTION
   // ===========================================================================
@@ -400,7 +408,76 @@ async function main() {
     console.log('  ✓ [Live Test 3 Pass]: One-click copy copied exact raw Markdown to system clipboard with interactive visual feedback.');
     console.log(`    - Copied text length: ${copiedSystemText.length} characters (exact match with testMarkdown)`);
 
-    // Clean up popup
+    // =========================================================================
+    // LIVE TEST 4: Popup Submit Contract (talk/submit), Raw Text & IME Guard
+    // =========================================================================
+    console.log('\n[Live Test 4] Testing Popup Enter Dispatch (talk/submit), Raw Text & IME Guard...');
+
+    // Open fresh popup
+    const popupTargetRes3 = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(popupUrl)}`, { method: 'PUT' });
+    const popupTab3 = await popupTargetRes3.json();
+    const popupCdp3 = new CdpClient(popupTab3.webSocketDebuggerUrl);
+    await popupCdp3.connect();
+
+    await new Promise(r => setTimeout(r, 600));
+
+    // Install message interceptor / spy in popup context
+    const submitSpyEval = await popupCdp3.send('Runtime.evaluate', {
+      expression: `
+        (async () => {
+          const input = document.getElementById('talk-input');
+          if (!input) throw new Error('#talk-input not found');
+
+          window.__sentMessages = [];
+          const origSendMessage = chrome.runtime.sendMessage;
+          chrome.runtime.sendMessage = function(msg, callback) {
+            window.__sentMessages.push(msg);
+            if (origSendMessage) origSendMessage.apply(this, arguments);
+          };
+
+          // 1. Test IME composition guard: Enter during IME should NOT dispatch
+          input.value = '輸入中';
+          input.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+          input.dispatchEvent(new Event('compositionend', { bubbles: true }));
+
+          const countAfterIme = window.__sentMessages.length;
+
+          // 2. Test whitespace-only prompt: Should NOT dispatch
+          input.value = '   ';
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+          const countAfterWhitespace = window.__sentMessages.length;
+
+          // 3. Test genuine submit: Must send action: 'talk/submit' and preserve raw untrimmed text
+          input.value = '  ledger test  ';
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+          return {
+            countAfterIme,
+            countAfterWhitespace,
+            sent: window.__sentMessages
+          };
+        })()
+      `,
+      awaitPromise: true,
+      returnByValue: true
+    });
+
+    const submitSpyRes = submitSpyEval.result?.value;
+    assert.ok(submitSpyRes, 'Submit spy evaluation failed');
+    assert.equal(submitSpyRes.countAfterIme, 0, 'Enter during IME composition must NOT dispatch message');
+    assert.equal(submitSpyRes.countAfterWhitespace, 0, 'Whitespace-only input must NOT dispatch message');
+    assert.equal(submitSpyRes.sent.length, 1, 'Genuine Enter must dispatch exactly one message');
+    assert.equal(submitSpyRes.sent[0].action, 'talk/submit', 'Message action must be "talk/submit" to match Service Worker');
+    assert.equal(submitSpyRes.sent[0].text, '  ledger test  ', 'Raw prompt text must be preserved without premature trimming');
+    console.log('  ✓ [Live Test 4 Pass]: Popup Enter dispatched action "talk/submit" once with raw untrimmed prompt; IME and empty whitespace guards verified.');
+
+    // Clean up popup 3
+    popupCdp3.close();
+    await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/close/${popupTab3.id}`).catch(() => {});
+
+    // Clean up popup 2
     popupCdp2.close();
     await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/close/${popupTab2.id}`).catch(() => {});
     swCdp.close();

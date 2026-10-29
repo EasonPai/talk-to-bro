@@ -115,12 +115,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    let isComposing = false;
+    input.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+    input.addEventListener('compositionend', () => {
+      isComposing = false;
+    });
+
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || isComposing || e.keyCode === 229) {
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const text = input.value.trim();
-        if (text && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-          chrome.runtime.sendMessage({ action: 'TTB_START_TALK', text });
+        const rawText = input.value;
+        if (rawText && rawText.trim().length > 0) {
+          if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+            chrome.runtime.sendMessage({ action: 'talk/submit', text: rawText });
+          }
         }
       }
     });

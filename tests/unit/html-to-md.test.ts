@@ -67,3 +67,17 @@ test('HTML to Markdown - Code blocks preserve internal whitespace and indentatio
   const actual = htmlToMarkdown(rawHtml);
   assert.ok(actual.includes('def solve():\n    if True:\n        # 8 spaces below\n        return 42\n\n    return 0'));
 });
+
+test('HTML to Markdown - Regression: preserves first-line code indentation and trailing newlines', () => {
+  const probeHtml = '<pre><code class="language-python">    return 42\n\n</code></pre>';
+  const actual = htmlToMarkdown(probeHtml);
+  assert.equal(actual, '```python\n    return 42\n\n```');
+});
+
+test('HTML to Markdown - Regression: literal asterisks, underscores, and metacharacters are escaped correctly', () => {
+  const actualStar = htmlToMarkdown('<p>literal *star*</p>');
+  assert.equal(actualStar, 'literal \\*star\\*');
+
+  const actualUnderscore = htmlToMarkdown('<p>literal _underscore_</p>');
+  assert.equal(actualUnderscore, 'literal \\_underscore\\_');
+});

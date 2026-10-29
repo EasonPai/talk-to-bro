@@ -80,7 +80,7 @@ export async function checkReady(args: { chatId?: string; text?: string; targetU
 /**
  * Safely inserts text via document.execCommand("insertText") and dispatches submission.
  */
-export async function insertAndSend(text: string) {
+export async function insertAndSend(text: string, talkId?: string) {
   const editor = queryOne<HTMLElement>('editor');
   if (!editor) {
     return { ok: false, code: 'INPUT_NOT_FOUND', reason: 'Editor not found' };
@@ -153,6 +153,10 @@ export async function insertAndSend(text: string) {
         : (latestTurn.textContent || '').replace(/^你說了\s*/, '').trim();
       if (normalizeText(observedText) === normalizeText(text)) {
         verifiedUserTurn = true;
+        latestTurn.setAttribute('data-ttb-verified', '1');
+        if (talkId) {
+          latestTurn.setAttribute('data-ttb-talk-id', talkId);
+        }
         break;
       }
     }
@@ -166,10 +170,90 @@ export async function insertAndSend(text: string) {
   return { ok: true, userTurnVerified: true, sentAt: Date.now() };
 }
 
+const POS_FOLLOWING = typeof Node !== 'undefined' ? Node.DOCUMENT_POSITION_FOLLOWING : 4;
+
 /**
- * Probes active turn state and text streaming progress.
+ * Locates the target model turn element associated with a specific talk or prompt text.
+ * Strictly binds extraction and probing to the model turn responding to this Talk's user turn.
  */
-export function probe() {
+export function findTargetModelTurn(args?: { talkId?: string; text?: string }): HTMLElement | null {
+  const userTurns = queryAll<HTMLElement>('userTurn');
+  const modelTurns = queryAll<HTMLElement>('modelTurn');
+
+  if (modelTurns.length === 0) return null;
+
+  // 1. Identify post-baseline user turn matching talkId or text
+  let targetUserTurn: HTMLElement | null = null;
+  const newTurns = userTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
+
+  if (args?.talkId) {
+    targetUserTurn = newTurns.find(el => el.getAttribute('data-ttb-talk-id') === args.talkId) || null;
+  }
+
+  if (!targetUserTurn && args?.text) {
+    const targetNorm = normalizeText(args.text);
+    for (const turn of newTurns) {
+      const lines = queryAll<HTMLElement>('userTurnText', turn);
+      const observedText = lines.length > 0
+        ? lines.map(l => (l.textContent || '').trim()).join('\n')
+        : (turn.textContent || '').replace(/^你說了\s*/, '').trim();
+      if (normalizeText(observedText) === targetNorm) {
+        targetUserTurn = turn;
+        break;
+      }
+    }
+  }
+
+  // 2. If target user turn found, find the model turn responding to THIS user turn
+  if (targetUserTurn) {
+    // Find all model turns that follow targetUserTurn in document order
+    const followingModelTurns = modelTurns.filter(m => {
+      const pos = targetUserTurn!.compareDocumentPosition(m);
+      return (pos & POS_FOLLOWING) !== 0;
+    });
+
+    if (followingModelTurns.length === 0) {
+      return null;
+    }
+
+    // Find all user turns that follow targetUserTurn in document order
+    const followingUserTurns = userTurns.filter(u => {
+      const pos = targetUserTurn!.compareDocumentPosition(u);
+      return (pos & POS_FOLLOWING) !== 0;
+    });
+
+    const candidate = followingModelTurns[0];
+
+    // candidate MUST appear BEFORE any subsequent user turn
+    if (followingUserTurns.length > 0) {
+      const nextUser = followingUserTurns[0];
+      const pos = candidate.compareDocumentPosition(nextUser);
+      if ((pos & POS_FOLLOWING) === 0) {
+        // candidate appears after nextUser; meaning it belongs to a subsequent turn
+        return null;
+      }
+    }
+
+    return candidate;
+  }
+
+  // 3. Fallback when args is omitted (e.g. unit testing single turn)
+  const newModelTurns = modelTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
+  if (newModelTurns.length === 1) {
+    return newModelTurns[0];
+  }
+  if (newModelTurns.length === 0 && modelTurns.length > 0) {
+    return modelTurns[modelTurns.length - 1];
+  }
+
+  // Ambiguous: multiple model turns exist without target user turn binding
+  return null;
+}
+
+/**
+ * Probes active turn state and text streaming progress for target talk.
+ */
+export function probe(args?: { talkId?: string; text?: string }) {
   const editor = queryOne('editor');
   if (!editor) {
     return {
@@ -185,9 +269,7 @@ export function probe() {
   const stopBtn = queryOne('stopButton');
   const isGenerating = Boolean(stopBtn && getComputedStyle(stopBtn).display !== 'none');
 
-  const modelTurns = queryAll('modelTurn');
-  const newModelTurns = modelTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
-  const activeModelTurn = newModelTurns.length > 0 ? newModelTurns[newModelTurns.length - 1] : null;
+  const activeModelTurn = findTargetModelTurn(args);
 
   let textLen = 0;
   let hasDoneAction = false;
@@ -226,20 +308,18 @@ export function probe() {
 }
 
 /**
- * Extracts and converts model body HTML to high-fidelity Markdown.
+ * Extracts and converts model body HTML to high-fidelity Markdown strictly bound to target talk.
  */
-export function extract() {
-  const modelTurns = queryAll('modelTurn');
-  const newModelTurns = modelTurns.filter(el => el.getAttribute('data-ttb-seen') !== '1');
-  const activeModelTurn = newModelTurns.length > 0 ? newModelTurns[newModelTurns.length - 1] : null;
+export function extract(args?: { talkId?: string; text?: string }) {
+  const targetModelTurn = findTargetModelTurn(args);
 
-  if (!activeModelTurn) {
-    return { error: 'EXTRACT_FAILED', reason: 'Model turn element not found' };
+  if (!targetModelTurn) {
+    return { error: 'EXTRACT_FAILED', reason: 'Model turn element not found for target talk' };
   }
 
-  const body = queryOne('modelBody', activeModelTurn) || activeModelTurn;
+  const body = queryOne('modelBody', targetModelTurn) || targetModelTurn;
   const rawHtml = body.innerHTML || '';
-  const markdown = htmlToMarkdown(body as HTMLElement);
+  const markdown = htmlToMarkdown(rawHtml ? rawHtml : (body as HTMLElement));
   return { markdown, html: rawHtml };
 }
 
@@ -263,17 +343,17 @@ if (typeof window !== 'undefined') {
         }
 
         if (msg.action === 'TTB_INSERT_AND_SEND') {
-          insertAndSend(msg.text).then(sendResponse);
+          insertAndSend(msg.text, msg.talkId).then(sendResponse);
           return true;
         }
 
         if (msg.action === 'TTB_PROBE') {
-          sendResponse(probe());
+          sendResponse(probe(msg));
           return false;
         }
 
         if (msg.action === 'TTB_EXTRACT') {
-          sendResponse(extract());
+          sendResponse(extract(msg));
           return false;
         }
       });
