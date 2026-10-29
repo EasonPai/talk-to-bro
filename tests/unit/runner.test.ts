@@ -510,3 +510,96 @@ test('Talk Runner - CTO Review Probe 4: Mutex Liveness & Watchdog non-waiting de
   assert.equal(submitRes.accepted, true);
   assert.equal(submitRes.talk?.phase, 'waiting');
 });
+
+test('Talk Runner - CTO Review 2 Probe 1: Growth at 31s refreshes idle deadline and does NOT fail TIMEOUT_IDLE', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await h.runner.boot();
+  const subRes = await h.runner.submit('Growth refresh test');
+  assert.equal(subRes.accepted, true);
+  assert.equal(subRes.talk?.phase, 'waiting');
+
+  // Advance to 32000 (past initial 30s idle deadline) and provide probe with text growth
+  h.setTime(32000);
+  h.adapter.defaultProbe = {
+    page: 'ready',
+    turn: 'streaming',
+    generating: true,
+    textLength: 8,
+    textSig: computeTextSignature('growth!!'),
+    quota: false
+  };
+
+  const tickTalk = await h.runner.tick();
+  assert.equal(tickTalk?.phase, 'waiting');
+  assert.equal(tickTalk?.streamedChars, 8);
+  assert.equal(tickTalk?.lastGrowthAt, 32000);
+  // Idle deadline must be refreshed to 32000 + 30000 = 62000
+  assert.equal(tickTalk?.phaseDeadlineAt, 62000);
+});
+
+test('Talk Runner - CTO Review 2 Probe 2: Hung probe never blocks absolute total timeout (TIMEOUT_TOTAL)', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await h.runner.boot();
+  await h.runner.submit('Probe hung test');
+
+  // Adapter probe returns a never-settling Promise
+  h.adapter.probe = () => new Promise(() => {});
+
+  // Advance time past 180s total timeout
+  h.setTime(182000);
+
+  const tickTalk = await h.runner.tick();
+  assert.equal(tickTalk?.phase, 'failed');
+  assert.equal(tickTalk?.failure?.code, 'TIMEOUT_TOTAL');
+  assert.equal(tickTalk?.failure?.stage, 'read');
+
+  const runtime = await getRuntimeStorage(h.storageLocal);
+  assert.equal(runtime.lastTalk?.phase, 'failed');
+  assert.equal(runtime.lastTalk?.failure?.code, 'TIMEOUT_TOTAL');
+  assert.equal(runtime.logByTalkId[tickTalk!.id]?.result, 'read_failed');
+});
+
+test('Talk Runner - CTO Review 2 Probe 3: Late checkReady rejection on recovery does NOT dispatch send and atomically records to logByTalkId', async () => {
+  const h = createHarness();
+  h.setTime(1000);
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await saveSessionStorage(h.storageSession, { bootId: 'existing-session-boot-id' });
+
+  // Seed sending Talk with deadline 11000
+  const sendingTalk = {
+    id: 'talk-late-checkready',
+    text: 'Late checkready recovery',
+    phase: 'sending' as const,
+    createdAt: 1000,
+    updatedAt: 1000,
+    phaseDeadlineAt: 11000,
+    tabId: 1001
+  };
+  await h.storageLocal.set({ 'runtime:v1': { lastTalk: sendingTalk, logByTalkId: {} } });
+
+  // checkReady resolves ok, but clock advances to 20000 during the async check
+  h.adapter.checkReady = async () => {
+    h.setTime(20000);
+    return { ok: true, chatId: 'mock-chat' };
+  };
+
+  await h.runner.boot();
+
+  // sendCalls must be 0 because transition to SUBMITTING rejected late execution
+  assert.equal(h.adapter.sendCalls, 0, 'adapter.send must not be called when transition failed due to deadline');
+
+  const runtime = await getRuntimeStorage(h.storageLocal);
+  assert.equal(runtime.lastTalk?.phase, 'failed');
+  assert.equal(runtime.lastTalk?.failure?.code, 'EDITOR_BUSY');
+  assert.equal(runtime.lastTalk?.failure?.stage, 'send');
+
+  // logByTalkId must be atomically populated with terminal outcome
+  const logEntry = runtime.logByTalkId['talk-late-checkready'];
+  assert.ok(logEntry, 'logByTalkId must contain finalized terminal entry');
+  assert.equal(logEntry?.result, 'send_failed');
+  assert.equal(logEntry?.at, 20000);
+});

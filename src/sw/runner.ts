@@ -19,7 +19,7 @@ import {
   finalizeTerminalTalk
 } from '../shared/storage.ts';
 import { createTalk, transition, phaseDeadlineOf, stageOf } from '../shared/talk-machine.ts';
-import { evaluateTick } from '../shared/tick.ts';
+import { evaluateTick, TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
 import { reconcile } from './reconcile.ts';
 import { getBootReadyPromise, type BootResult } from './boot.ts';
 
@@ -115,6 +115,11 @@ export class TalkRunner {
       let talk = runtime.lastTalk;
       if (!talk || talk.id !== talkId || talk.phase !== 'queued') return;
       talk = transition(talk, { type: 'TAB_RESOLVED', tabId: 1001 }, this.now());
+      if (talk.phase === 'failed') {
+        await finalizeTerminalTalk(this.storageLocal, talk, this.now());
+        this.alarms?.clear('ttb-watchdog');
+        return;
+      }
       await writeAheadTalk(this.storageLocal, talk);
     });
 
@@ -141,6 +146,11 @@ export class TalkRunner {
 
       // AWAIT SUBMITTING WRITE-AHEAD PRIOR TO SEND ACTION DISPATCH
       talk = transition(talk, { type: 'SUBMITTING' }, this.now());
+      if (talk.phase === 'failed') {
+        await finalizeTerminalTalk(this.storageLocal, talk, this.now());
+        this.alarms?.clear('ttb-watchdog');
+        return talk;
+      }
       await writeAheadTalk(this.storageLocal, talk);
       return talk;
     });
@@ -172,6 +182,11 @@ export class TalkRunner {
 
       const sentTime = this.now();
       talk = transition(talk, { type: 'SUBMIT_CONFIRMED', sentAt: sentTime }, sentTime);
+      if (talk.phase === 'failed') {
+        await finalizeTerminalTalk(this.storageLocal, talk, sentTime);
+        this.alarms?.clear('ttb-watchdog');
+        return talk;
+      }
       await writeAheadTalk(this.storageLocal, talk);
       return talk;
     });
@@ -186,6 +201,17 @@ export class TalkRunner {
       const runtime = await getRuntimeStorage(this.storageLocal);
       let talk = runtime.lastTalk;
       if (!talk || talk.phase === 'done' || talk.phase === 'failed') return null;
+
+      // Absolute total timeout enforcement for waiting phase BEFORE awaiting probe
+      if (talk.phase === 'waiting') {
+        const totalElapsed = now - (talk.sentAt ?? talk.createdAt);
+        if (totalElapsed >= TOTAL_TIMEOUT_MS) {
+          talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_TOTAL' }, now);
+          await finalizeTerminalTalk(this.storageLocal, talk, now);
+          this.alarms?.clear('ttb-watchdog');
+          return talk;
+        }
+      }
 
       // Phase deadline check during watchdog tick for non-waiting phases (waiting is governed by evaluateTick)
       if (talk.phase !== 'waiting' && talk.phaseDeadlineAt !== null && now > talk.phaseDeadlineAt) {
@@ -393,6 +419,11 @@ export class TalkRunner {
         let talk = runtime.lastTalk;
         if (!talk || (talk.phase !== 'queued' && talk.phase !== 'resolving_tab')) return;
         talk = transition(talk, { type: 'TAB_RESOLVED', tabId: 1001 }, this.now());
+        if (talk.phase === 'failed') {
+          await finalizeTerminalTalk(this.storageLocal, talk, this.now());
+          this.alarms?.clear('ttb-watchdog');
+          return;
+        }
         await writeAheadTalk(this.storageLocal, talk);
       });
 
@@ -419,6 +450,12 @@ export class TalkRunner {
           }
 
           t = transition(t, { type: 'SUBMITTING' }, this.now());
+          if (t.phase === 'failed') {
+            await finalizeTerminalTalk(this.storageLocal, t, this.now());
+            this.alarms?.clear('ttb-watchdog');
+            return false;
+          }
+
           await writeAheadTalk(this.storageLocal, t);
           return true;
         });
@@ -442,8 +479,13 @@ export class TalkRunner {
             } else {
               const sentTime = this.now();
               t = transition(t, { type: 'SUBMIT_CONFIRMED', sentAt: sentTime }, sentTime);
-              await writeAheadTalk(this.storageLocal, t);
-              this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
+              if (t.phase === 'failed') {
+                await finalizeTerminalTalk(this.storageLocal, t, sentTime);
+                this.alarms?.clear('ttb-watchdog');
+              } else {
+                await writeAheadTalk(this.storageLocal, t);
+                this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
+              }
             }
           });
         }
@@ -465,8 +507,13 @@ export class TalkRunner {
 
           if (probe.turn === 'pending' || probe.turn === 'streaming' || probe.turn === 'complete') {
             t = transition(t, { type: 'SUBMIT_CONFIRMED', sentAt: now }, now);
-            await writeAheadTalk(this.storageLocal, t);
-            this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
+            if (t.phase === 'failed') {
+              await finalizeTerminalTalk(this.storageLocal, t, now);
+              this.alarms?.clear('ttb-watchdog');
+            } else {
+              await writeAheadTalk(this.storageLocal, t);
+              this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
+            }
           } else {
             t = transition(t, { type: 'FAIL', code: 'SUBMIT_UNCONFIRMED', maybeSent: true }, now);
             await finalizeTerminalTalk(this.storageLocal, t, now);

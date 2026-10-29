@@ -78,8 +78,15 @@ export function transition(talk: Talk, event: TalkEvent, now: number): Talk {
   }
 
   // Phase Deadline Enforcement (AC1 contract):
-  // If current timestamp exceeds phaseDeadlineAt, reject late success transition and enter failed state
-  if (talk.phaseDeadlineAt !== null && now > talk.phaseDeadlineAt) {
+  // If current timestamp exceeds phaseDeadlineAt, reject late success transition and enter failed state.
+  // In 'waiting' phase, STREAMING_GROWTH indicates text growth was observed on the current probe,
+  // which refreshes the idle deadline (consistent with evaluateTick), unless overall total timeout expired.
+  const isWaitingGrowth = talk.phase === 'waiting' && event.type === 'STREAMING_GROWTH';
+  const isTotalTimeout =
+    (talk.sentAt !== undefined && now - talk.sentAt >= TOTAL_TIMEOUT_MS) ||
+    now - talk.createdAt >= TOTAL_TIMEOUT_MS;
+
+  if (talk.phaseDeadlineAt !== null && now > talk.phaseDeadlineAt && !(isWaitingGrowth && !isTotalTimeout)) {
     let failureCode: FailureCode;
     switch (talk.phase) {
       case 'queued':
@@ -95,9 +102,7 @@ export function transition(talk: Talk, event: TalkEvent, now: number): Talk {
         failureCode = 'SUBMIT_UNCONFIRMED';
         break;
       case 'waiting':
-        failureCode = (talk.sentAt !== undefined && (now - talk.sentAt >= TOTAL_TIMEOUT_MS))
-          ? 'TIMEOUT_TOTAL'
-          : 'TIMEOUT_IDLE';
+        failureCode = isTotalTimeout ? 'TIMEOUT_TOTAL' : 'TIMEOUT_IDLE';
         break;
       case 'extracting':
         failureCode = 'EXTRACT_FAILED';
