@@ -6,6 +6,7 @@ import type {
   TalkEvent,
   FailureCode
 } from './types.ts';
+import { TOTAL_TIMEOUT_MS } from './tick.ts';
 
 export const PHASE_DEADLINES_MS: Record<Exclude<TalkPhase, 'done' | 'failed'>, number> = {
   queued: 5_000,
@@ -67,6 +68,53 @@ export function transition(talk: Talk, event: TalkEvent, now: number): Talk {
         stage,
         at: now,
         maybeSent: event.maybeSent ?? (talk.phase === 'submitting')
+      },
+      handoff: {
+        status: 'pending',
+        copied: false,
+        focused: false
+      }
+    };
+  }
+
+  // Phase Deadline Enforcement (AC1 contract):
+  // If current timestamp exceeds phaseDeadlineAt, reject late success transition and enter failed state
+  if (talk.phaseDeadlineAt !== null && now > talk.phaseDeadlineAt) {
+    let failureCode: FailureCode;
+    switch (talk.phase) {
+      case 'queued':
+        failureCode = 'INTERNAL';
+        break;
+      case 'resolving_tab':
+        failureCode = 'TAB_UNRESPONSIVE';
+        break;
+      case 'sending':
+        failureCode = 'EDITOR_BUSY';
+        break;
+      case 'submitting':
+        failureCode = 'SUBMIT_UNCONFIRMED';
+        break;
+      case 'waiting':
+        failureCode = (talk.sentAt !== undefined && (now - talk.sentAt >= TOTAL_TIMEOUT_MS))
+          ? 'TIMEOUT_TOTAL'
+          : 'TIMEOUT_IDLE';
+        break;
+      case 'extracting':
+        failureCode = 'EXTRACT_FAILED';
+        break;
+    }
+
+    const stage = stageOf(talk.phase);
+    return {
+      ...talk,
+      phase: 'failed',
+      updatedAt: now,
+      phaseDeadlineAt: null,
+      failure: {
+        code: failureCode,
+        stage,
+        at: now,
+        maybeSent: talk.phase === 'submitting'
       },
       handoff: {
         status: 'pending',

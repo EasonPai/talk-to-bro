@@ -80,17 +80,60 @@ test('Talk State Machine - Sequential Happy Path Transitions', () => {
 
   // Alternative path: resolving_tab and extracting transitions
   const tAlt = 1700000050000;
-  let resolvingTalk = { ...createTalk('Alt', tAlt), phase: 'resolving_tab' as const };
+  let resolvingTalk = { ...createTalk('Alt', tAlt), phase: 'resolving_tab' as const, phaseDeadlineAt: tAlt + 15000 };
   resolvingTalk = transition(resolvingTalk, { type: 'TAB_RESOLVED', tabId: 88 }, tAlt + 10);
   assert.equal(resolvingTalk.phase, 'sending');
   assert.equal(resolvingTalk.tabId, 88);
 
-  let extractingTalk = { ...resolvingTalk, phase: 'extracting' as const };
+  let extractingTalk = { ...resolvingTalk, phase: 'extracting' as const, phaseDeadlineAt: tAlt + 10000 };
   const doneFromExtracting = transition(extractingTalk, { type: 'STREAM_COMPLETE', answerMarkdown: 'Extracted markdown' }, tAlt + 20);
   assert.equal(doneFromExtracting.phase, 'done');
   assert.equal(doneFromExtracting.answerMarkdown, 'Extracted markdown');
   assert.equal(phaseDeadlineOf('done', tAlt), null);
   assert.equal(phaseDeadlineOf('failed', tAlt), null);
+});
+
+test('Talk State Machine - AC1 Phase Deadline Enforcement (Late transitions rejected)', () => {
+  // Test Case: queued talk created at 1000 has deadline 6000. Late TAB_RESOLVED at 100000 must fail!
+  const talkQueued = createTalk('Late queued test', 1000);
+  assert.equal(talkQueued.phaseDeadlineAt, 6000);
+
+  const lateQueued = transition(talkQueued, { type: 'TAB_RESOLVED', tabId: 1 }, 100000);
+  assert.equal(lateQueued.phase, 'failed', 'Late transition must result in failed phase');
+  assert.equal(lateQueued.failure?.code, 'INTERNAL');
+  assert.equal(lateQueued.failure?.stage, 'send');
+  assert.equal(lateQueued.phaseDeadlineAt, null);
+
+  // Resolving tab past deadline -> TAB_UNRESPONSIVE
+  const talkResolving = { ...talkQueued, phase: 'resolving_tab' as const, phaseDeadlineAt: 20000 };
+  const lateResolving = transition(talkResolving, { type: 'TAB_RESOLVED', tabId: 1 }, 25000);
+  assert.equal(lateResolving.phase, 'failed');
+  assert.equal(lateResolving.failure?.code, 'TAB_UNRESPONSIVE');
+
+  // Sending past deadline -> EDITOR_BUSY
+  const talkSending = { ...talkQueued, phase: 'sending' as const, phaseDeadlineAt: 15000 };
+  const lateSending = transition(talkSending, { type: 'SUBMITTING' }, 20000);
+  assert.equal(lateSending.phase, 'failed');
+  assert.equal(lateSending.failure?.code, 'EDITOR_BUSY');
+
+  // Submitting past deadline -> SUBMIT_UNCONFIRMED
+  const talkSubmitting = { ...talkQueued, phase: 'submitting' as const, phaseDeadlineAt: 20000 };
+  const lateSubmitting = transition(talkSubmitting, { type: 'SUBMIT_CONFIRMED', sentAt: 10000 }, 25000);
+  assert.equal(lateSubmitting.phase, 'failed');
+  assert.equal(lateSubmitting.failure?.code, 'SUBMIT_UNCONFIRMED');
+  assert.equal(lateSubmitting.failure?.maybeSent, true);
+
+  // Waiting past deadline -> TIMEOUT_IDLE
+  const talkWaiting = { ...talkQueued, phase: 'waiting' as const, phaseDeadlineAt: 35000, sentAt: 1000, lastGrowthAt: 1000 };
+  const lateWaiting = transition(talkWaiting, { type: 'STREAM_COMPLETE', answerMarkdown: 'late' }, 40000);
+  assert.equal(lateWaiting.phase, 'failed');
+  assert.equal(lateWaiting.failure?.code, 'TIMEOUT_IDLE');
+
+  // Extracting past deadline -> EXTRACT_FAILED
+  const talkExtracting = { ...talkQueued, phase: 'extracting' as const, phaseDeadlineAt: 20000 };
+  const lateExtracting = transition(talkExtracting, { type: 'STREAM_COMPLETE', answerMarkdown: 'late' }, 25000);
+  assert.equal(lateExtracting.phase, 'failed');
+  assert.equal(lateExtracting.failure?.code, 'EXTRACT_FAILED');
 });
 
 test('Talk State Machine - Terminal Immutability (done & failed are sealed)', () => {

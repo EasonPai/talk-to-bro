@@ -3,11 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TalkRunner } from '../../src/sw/runner.ts';
 import { FakeAdapter, MemoryStorage, FakeAlarms } from '../helpers/fake-adapter.ts';
-import { getRuntimeStorage, saveSettingsStorage } from '../../src/shared/storage.ts';
+import { getRuntimeStorage, saveSettingsStorage, saveSessionStorage } from '../../src/shared/storage.ts';
 import { computeTextSignature } from '../../src/shared/tick.ts';
-import type { ProbeResult } from '../../src/shared/types.ts';
-
 import { resetBootForTesting } from '../../src/sw/boot.ts';
+import type { ProbeResult } from '../../src/shared/types.ts';
 
 function createHarness() {
   resetBootForTesting();
@@ -95,6 +94,102 @@ test('Talk Runner - Happy path execution with streaming, completion and storage 
   const runtime = await getRuntimeStorage(h.storageLocal);
   assert.equal(runtime.lastTalk?.phase, 'done');
   assert.equal(runtime.logByTalkId[talk!.id]?.result, 'success');
+});
+
+test('Talk Runner - CTO Review Probe 1: Fresh browser boot via runner.boot() transitions active talk to INTERRUPTED', async () => {
+  const h = createHarness();
+  const t0 = 2000;
+  h.setTime(t0);
+
+  // Seed local runtime with a waiting Talk
+  const waitingTalk = {
+    id: 'talk-browser-crash',
+    text: 'Waiting before crash',
+    phase: 'waiting' as const,
+    createdAt: t0 - 1000,
+    updatedAt: t0 - 500,
+    phaseDeadlineAt: t0 + 29500,
+    sentAt: t0 - 500
+  };
+  await h.storageLocal.set({ 'runtime:v1': { lastTalk: waitingTalk, logByTalkId: {} } });
+
+  // Leave session storage completely empty (as after browser restart)
+  await h.storageSession.clear();
+  resetBootForTesting();
+
+  // Call real startup path runner.boot()!
+  const bootResult = await h.runner.boot();
+  assert.equal(bootResult.isNewBrowserSession, true, 'isNewBrowserSession must be true on fresh boot');
+
+  // Assert talk transitioned to failed / INTERRUPTED with deferred handoff
+  const runtime = await getRuntimeStorage(h.storageLocal);
+  assert.equal(runtime.lastTalk?.phase, 'failed', 'Active talk must be failed on fresh browser boot');
+  assert.equal(runtime.lastTalk?.failure?.code, 'INTERRUPTED');
+  assert.equal(runtime.lastTalk?.handoff?.status, 'deferred');
+  assert.equal(runtime.logByTalkId['talk-browser-crash']?.result, 'read_failed');
+});
+
+test('Talk Runner - CTO Review Probe 2: Same-session phase recovery drives pipeline forward', async () => {
+  // Scenario 2A: Seed queued -> boot() drives through resolving, sending, submitting to waiting!
+  const hA = createHarness();
+  await saveSettingsStorage(hA.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await saveSessionStorage(hA.storageSession, { bootId: 'existing-session-boot-id' });
+  const queuedTalk = {
+    id: 'talk-recover-queued',
+    text: 'Recover queued',
+    phase: 'queued' as const,
+    createdAt: hA.getTime(),
+    updatedAt: hA.getTime(),
+    phaseDeadlineAt: hA.getTime() + 5000
+  };
+  await hA.storageLocal.set({ 'runtime:v1': { lastTalk: queuedTalk, logByTalkId: {} } });
+
+  await hA.runner.boot();
+  assert.equal(hA.adapter.checkReadyCalls, 1, 'checkReady must be called');
+  assert.equal(hA.adapter.sendCalls, 1, 'send must be dispatched to adapter on recover');
+  const runtimeA = await getRuntimeStorage(hA.storageLocal);
+  assert.equal(runtimeA.lastTalk?.phase, 'waiting');
+
+  // Scenario 2B: Seed sending -> boot() does not throw and drives sendCalls=1
+  const hB = createHarness();
+  await saveSettingsStorage(hB.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await saveSessionStorage(hB.storageSession, { bootId: 'existing-session-boot-id' });
+  const sendingTalk = {
+    id: 'talk-recover-sending',
+    text: 'Recover sending',
+    phase: 'sending' as const,
+    createdAt: hB.getTime(),
+    updatedAt: hB.getTime(),
+    phaseDeadlineAt: hB.getTime() + 10000,
+    tabId: 1001
+  };
+  await hB.storageLocal.set({ 'runtime:v1': { lastTalk: sendingTalk, logByTalkId: {} } });
+
+  await hB.runner.boot();
+  assert.equal(hB.adapter.checkReadyCalls, 1);
+  assert.equal(hB.adapter.sendCalls, 1);
+  const runtimeB = await getRuntimeStorage(hB.storageLocal);
+  assert.equal(runtimeB.lastTalk?.phase, 'waiting');
+
+  // Scenario 2C: Seed extracting -> boot() drives extractCalls=1 and completes to done
+  const hC = createHarness();
+  await saveSettingsStorage(hC.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await saveSessionStorage(hC.storageSession, { bootId: 'existing-session-boot-id' });
+  const extractingTalk = {
+    id: 'talk-recover-extracting',
+    text: 'Recover extracting',
+    phase: 'extracting' as const,
+    createdAt: hC.getTime(),
+    updatedAt: hC.getTime(),
+    phaseDeadlineAt: hC.getTime() + 10000
+  };
+  await hC.storageLocal.set({ 'runtime:v1': { lastTalk: extractingTalk, logByTalkId: {} } });
+
+  await hC.runner.boot();
+  assert.equal(hC.adapter.extractCalls, 1, 'extract must be executed on resume_extract');
+  const runtimeC = await getRuntimeStorage(hC.storageLocal);
+  assert.equal(runtimeC.lastTalk?.phase, 'done');
+  assert.equal(runtimeC.logByTalkId['talk-recover-extracting']?.result, 'success');
 });
 
 test('Talk Runner - Busy rejection when talk is active', async () => {
@@ -254,7 +349,7 @@ test('Talk Runner - Reconcile handles browser restart crash recovery', async () 
   // Simulate browser restart: session storage cleared!
   await h.storageSession.clear();
 
-  const decision = await h.runner.reconcile();
+  const decision = await h.runner.reconcile(true);
   assert.equal(decision.action, 'fail_interrupted');
 
   const runtime = await getRuntimeStorage(h.storageLocal);
@@ -349,12 +444,12 @@ test('Talk Runner - Edge cases: mutex, non-waiting tick, signed_out, wrong_chat,
   const hQueued = createHarness();
   await saveSettingsStorage(hQueued.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
   await hQueued.runner.boot();
-  const queuedTalk = { id: 'talk-queued', text: 'queued', phase: 'queued' as const, createdAt: 1, updatedAt: 1, phaseDeadlineAt: 5000 };
+  const queuedTalk = { id: 'talk-queued', text: 'queued', phase: 'queued' as const, createdAt: hQueued.getTime(), updatedAt: hQueued.getTime(), phaseDeadlineAt: hQueued.getTime() + 5000 };
   await hQueued.storageLocal.set({ 'runtime:v1': { lastTalk: queuedTalk, logByTalkId: {} } });
   const recDecision = await hQueued.runner.reconcile();
   assert.equal(recDecision.action, 'restart_send');
   const queuedRuntime = await getRuntimeStorage(hQueued.storageLocal);
-  assert.equal(queuedRuntime.lastTalk?.phase, 'sending');
+  assert.equal(queuedRuntime.lastTalk?.phase, 'waiting');
 
   // Submit throws unexpected error in adapter -> catches and marks INTERNAL
   const hThrow = createHarness();
@@ -364,4 +459,54 @@ test('Talk Runner - Edge cases: mutex, non-waiting tick, signed_out, wrong_chat,
   const throwRes = await hThrow.runner.submit('Unexpected error');
   assert.equal(throwRes.talk?.phase, 'failed');
   assert.equal(throwRes.talk?.failure?.code, 'INTERNAL');
+});
+
+test('Talk Runner - CTO Review Probe 4: Mutex Liveness & Watchdog non-waiting deadline enforcement', async () => {
+  const h = createHarness();
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+  await h.runner.boot();
+
+  // Test 4A: Tick terminates talk stuck in sending past phaseDeadlineAt
+  const stuckSendingTalk = {
+    id: 'talk-stuck-sending',
+    text: 'Stuck sending',
+    phase: 'sending' as const,
+    createdAt: h.getTime(),
+    updatedAt: h.getTime(),
+    phaseDeadlineAt: h.getTime() + 10000,
+    tabId: 1001
+  };
+  await h.storageLocal.set({ 'runtime:v1': { lastTalk: stuckSendingTalk, logByTalkId: {} } });
+  
+  // Advance time past deadline
+  h.advanceTime(10001);
+  const expiredTalk = await h.runner.tick();
+  assert.equal(expiredTalk?.phase, 'failed');
+  assert.equal(expiredTalk?.failure?.code, 'EDITOR_BUSY');
+
+  // Test 4B: External adapter awaiting never holds mutex - other mutex callers proceed immediately
+  let adapterHangingResolve: () => void;
+  const adapterPromise = new Promise<void>(resolve => { adapterHangingResolve = resolve; });
+  h.adapter.send = async () => {
+    await adapterPromise;
+    return { ok: true, sentAt: h.getTime() };
+  };
+
+  // Submit starts, enters submitting, awaits send outside mutex
+  const submitPromise = h.runner.submit('Send with delay');
+  // Wait a microtask for submit to release mutex during send
+  await new Promise(r => setTimeout(r, 10));
+
+  // Verify mutex is free and getRuntimeStorage or mutex.run can execute immediately without waiting for send
+  let probeRan = false;
+  await h.runner.getMutex().run(async () => {
+    probeRan = true;
+  });
+  assert.equal(probeRan, true, 'Mutex must not be locked during async adapter.send execution');
+
+  // Unblock hanging adapter call
+  adapterHangingResolve!();
+  const submitRes = await submitPromise;
+  assert.equal(submitRes.accepted, true);
+  assert.equal(submitRes.talk?.phase, 'waiting');
 });

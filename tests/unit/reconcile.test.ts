@@ -27,50 +27,56 @@ test('Reconcile - Noop when talk is null, done, or failed', () => {
   assert.deepEqual(reconcile({ lastTalk: failedTalk, logByTalkId: {} }, session, t0 + 50), { action: 'noop' });
 });
 
-test('Reconcile - Browser restart (empty session) transitions active talk to fail_interrupted', () => {
+test('Reconcile - Browser restart (empty session or isNewBrowserSession) transitions active talk to fail_interrupted', () => {
   const t0 = 1700000000000;
   const activeTalk = createTalk('Active during browser crash', t0);
 
   // session is null -> Chrome was closed and reopened
-  const decision = reconcile({ lastTalk: activeTalk, logByTalkId: {} }, null, t0 + 500);
-  assert.deepEqual(decision, { action: 'fail_interrupted', reason: 'browser_restart' });
+  const decision1 = reconcile({ lastTalk: activeTalk, logByTalkId: {} }, null, t0 + 500);
+  assert.deepEqual(decision1, { action: 'fail_interrupted', reason: 'browser_restart' });
+
+  // isNewBrowserSession is true even if session object exists
+  const session: SessionV1Storage = { bootId: 'boot-new' };
+  const decision2 = reconcile({ lastTalk: activeTalk, logByTalkId: {} }, session, t0 + 500, true);
+  assert.deepEqual(decision2, { action: 'fail_interrupted', reason: 'browser_restart' });
 });
 
 test('Reconcile - Worker reboot within same browser session recovers correctly per phase', () => {
   const t0 = 1700000000000;
   const session: SessionV1Storage = { bootId: 'boot-active-session' };
 
-  // 1. Queued / Sending -> restart_send
+  // 1. Queued -> restart_send from resolving_tab
   const queuedTalk = createTalk('Queued', t0);
   assert.deepEqual(
-    reconcile({ lastTalk: queuedTalk, logByTalkId: {} }, session, t0 + 100),
+    reconcile({ lastTalk: queuedTalk, logByTalkId: {} }, session, t0 + 100, false),
     { action: 'restart_send', fromPhase: 'resolving_tab' }
   );
 
+  // 2. Sending -> restart_send from resolving_tab
   let sendingTalk = transition(queuedTalk, { type: 'TAB_RESOLVED', tabId: 1 }, t0 + 10);
   assert.deepEqual(
-    reconcile({ lastTalk: sendingTalk, logByTalkId: {} }, session, t0 + 100),
+    reconcile({ lastTalk: sendingTalk, logByTalkId: {} }, session, t0 + 100, false),
     { action: 'restart_send', fromPhase: 'resolving_tab' }
   );
 
-  // 2. Submitting -> verify_submit (NEVER duplicate send!)
+  // 3. Submitting -> verify_submit (NEVER duplicate send!)
   let submittingTalk = transition(sendingTalk, { type: 'SUBMITTING' }, t0 + 20);
   assert.deepEqual(
-    reconcile({ lastTalk: submittingTalk, logByTalkId: {} }, session, t0 + 100),
+    reconcile({ lastTalk: submittingTalk, logByTalkId: {} }, session, t0 + 100, false),
     { action: 'verify_submit' }
   );
 
-  // 3. Waiting -> resume_wait
+  // 4. Waiting -> resume_wait
   let waitingTalk = transition(submittingTalk, { type: 'SUBMIT_CONFIRMED', sentAt: t0 + 30 }, t0 + 30);
   assert.deepEqual(
-    reconcile({ lastTalk: waitingTalk, logByTalkId: {} }, session, t0 + 100),
+    reconcile({ lastTalk: waitingTalk, logByTalkId: {} }, session, t0 + 100, false),
     { action: 'resume_wait' }
   );
 
-  // 4. Extracting -> resume_extract
+  // 5. Extracting -> resume_extract
   const extractingTalk = { ...waitingTalk, phase: 'extracting' as const };
   assert.deepEqual(
-    reconcile({ lastTalk: extractingTalk, logByTalkId: {} }, session, t0 + 100),
+    reconcile({ lastTalk: extractingTalk, logByTalkId: {} }, session, t0 + 100, false),
     { action: 'resume_extract' }
   );
 });

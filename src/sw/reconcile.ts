@@ -12,17 +12,20 @@ import { TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
  *
  * Scenarios:
  * 1. Terminal or no active talk -> noop.
- * 2. session is null (browser quit & restarted) -> active talk fails with INTERRUPTED (handoff: deferred).
- * 3. SW restart within same browser session:
- *    - queued/resolving_tab/sending -> restart_send from resolving_tab (safe; hasn't submitted yet).
+ * 2. isNewBrowserSession is true OR session is null (browser quit & restarted)
+ *    -> active talk fails with INTERRUPTED (handoff: deferred).
+ * 3. Worker rebooted within active browser session:
+ *    - queued/resolving_tab -> restart_send from resolving_tab.
+ *    - sending -> restart_send from sending.
  *    - submitting -> verify_submit (NEVER re-submit blindly; probe first to avoid duplicate sends).
- *    - waiting -> resume_wait (if not past 180s total timeout).
+ *    - waiting -> resume_wait.
  *    - extracting -> resume_extract.
  */
 export function reconcile(
   runtime: RuntimeV1Storage,
   session: SessionV1Storage | null,
-  now: number
+  now: number,
+  isNewBrowserSession = false
 ): ReconcileDecision {
   const talk: Talk | null = runtime.lastTalk;
 
@@ -31,8 +34,8 @@ export function reconcile(
     return { action: 'noop' };
   }
 
-  // 2. Browser was restarted (session:v1 is empty / cleared by browser quit)
-  if (!session || !session.bootId) {
+  // 2. Browser was restarted (session was empty at boot or isNewBrowserSession is true)
+  if (isNewBrowserSession || !session || !session.bootId) {
     return { action: 'fail_interrupted', reason: 'browser_restart' };
   }
 
@@ -40,6 +43,8 @@ export function reconcile(
   switch (talk.phase) {
     case 'queued':
     case 'resolving_tab':
+      return { action: 'restart_send', fromPhase: 'resolving_tab' };
+
     case 'sending':
       return { action: 'restart_send', fromPhase: 'resolving_tab' };
 
@@ -47,13 +52,8 @@ export function reconcile(
       // Never re-click send automatically. Probe user turn first.
       return { action: 'verify_submit' };
 
-    case 'waiting': {
-      // If 180s total deadline already passed while SW was asleep, let watchdog fail it
-      if (talk.sentAt !== undefined && (now - talk.sentAt >= TOTAL_TIMEOUT_MS)) {
-        return { action: 'resume_wait' };
-      }
+    case 'waiting':
       return { action: 'resume_wait' };
-    }
 
     case 'extracting':
       return { action: 'resume_extract' };
