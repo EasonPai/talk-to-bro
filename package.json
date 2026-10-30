@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "Chrome MV3 Extension for Talk To Bro Personally",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "pretest": "node scripts/check-node-version.mjs",
     "build": "node scripts/build.mjs",
     "test": "node --experimental-test-coverage --test 'tests/unit/**/*.test.*'",
     "verify": "node scripts/test-m1-suite.js",
