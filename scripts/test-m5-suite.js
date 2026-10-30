@@ -8,6 +8,7 @@
 // message to the service worker. The harness never writes a failed Talk into runtime storage.
 // Live cases restore the user's clipboard, settings and runtime state, and close the tabs they open.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -26,6 +27,11 @@ const CDP_PORT = Number(process.env.CDP_PORT) || 9222;
 
 const HARNESS_CHAT_URL = 'https://gemini.google.com/app/ttbharnessm5';
 const HARNESS_CHAT_HTML = '<!doctype html><title>Harness Bro Chat</title><body>Harness Bro Chat</body>';
+
+// Opt-in: run the closed-popup, rejected-clipboard and deferred cases against the already-open REAL signed-in Bro Chat tab.
+const REAL_BRO = process.env.TTB_REAL_BRO === '1';
+// Opt-in: save screenshots of extension popup pages only (never of the Bro Chat tab).
+const SHOT_DIR = process.env.TTB_SHOT_DIR || '';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -195,6 +201,10 @@ async function main() {
   let browserCdp = null;
   let anchor = null;
   let broTab = null;
+  let BRO_URL = HARNESS_CHAT_URL;
+  let fixtureTab = null;
+  let realTab = null;
+  let shotCount = 0;
   const openedCdps = new Set();
   let restoreState = null;
 
@@ -243,7 +253,10 @@ async function main() {
   async function writeClipboard(text) {
     const page = await openExtPage('options.html');
     try {
-      await evalIn(page.cdp, `navigator.clipboard.writeText(${JSON.stringify(text)})`);
+      await waitUntil(async () => {
+        await evalIn(page.cdp, `navigator.clipboard.writeText(${JSON.stringify(text)})`).catch(() => {});
+        return (await evalIn(page.cdp, 'navigator.clipboard.readText()').catch(() => null)) === text;
+      }, { label: 'clipboard write to be observable', timeoutMs: 10000 });
     } finally {
       await closeTab(page);
     }
@@ -271,8 +284,19 @@ async function main() {
     return handle;
   }
 
+  // Attaches to (never navigates, types into, or reads) the existing real Gemini app tab.
+  async function attachRealBroTab() {
+    const list = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+    const target = list.find(t => t.type === 'page' && /^https:\/\/gemini\.google\.com\/app\/[A-Za-z0-9_-]+/.test(t.url) && !t.url.includes('ttbharness'));
+    if (!target) throw new Error('TTB_REAL_BRO=1 needs an already-open https://gemini.google.com/app/<id> tab in the CfT browser');
+    const cdp = new CdpClient(target.webSocketDebuggerUrl);
+    await cdp.connect();
+    const u = new URL(target.url);
+    return { tab: target, cdp, attached: true, url: `${u.origin}${u.pathname}` };
+  }
+
   const getBroTabId = async () => {
-    const tabs = await swEval(`chrome.tabs.query({ url: '*://gemini.google.com/app/ttbharnessm5*' }).then(ts => ts.map(t => t.id))`);
+    const tabs = await swEval(`chrome.tabs.query({ url: '*://gemini.google.com${new URL(BRO_URL).pathname}*' }).then(ts => ts.map(t => t.id))`);
     return tabs[0] ?? null;
   };
 
@@ -326,6 +350,13 @@ async function main() {
         return (${fn.toString()})(waitFor);
       })()`);
     } finally {
+      if (SHOT_DIR) {
+        const shot = await page.cdp.send('Page.captureScreenshot', { format: 'png' }).catch(() => null);
+        if (shot) {
+          fs.mkdirSync(SHOT_DIR, { recursive: true });
+          fs.writeFileSync(path.join(SHOT_DIR, `popup-${String(++shotCount).padStart(2, '0')}.png`), Buffer.from(shot.data, 'base64'));
+        }
+      }
       await closeTab(page);
     }
   }
@@ -367,6 +398,15 @@ async function main() {
 
     anchor = await openTab('about:blank');
     broTab = await openHarnessBroTab();
+    // Fixture stays for the 14-code loop and the countdown case; real mode swaps it in for B4.2/B4.3/B4.4.
+    fixtureTab = broTab;
+    if (REAL_BRO) {
+      realTab = await attachRealBroTab();
+      console.log(`Bro Chat mode: REAL Bro Chat (existing signed-in gemini.google.com/app tab; no navigation, no input, no content read)`);
+    } else {
+      console.log('Bro Chat mode: fixture stand-in (Fetch-intercepted gemini.google.com/app/ttbharnessm5)');
+    }
+    BRO_URL = realTab ? realTab.url : HARNESS_CHAT_URL;
 
     // ===========================================================================
     // SECTION C: LIVE ACTION POPUP & HANDOFF VERIFICATION
@@ -406,8 +446,8 @@ async function main() {
       await waitHandoffSettled(talk.id);
 
       const uiResult = await openPopupAndEval(async (waitFor) => {
+        await waitFor(() => document.getElementById('error-message')?.textContent.trim().length > 0, 15000);
         const errorMessage = document.getElementById('error-message');
-        await waitFor(() => errorMessage && errorMessage.textContent.trim().length > 0);
         const errorContainer = document.getElementById('error-container');
         const errorBadge = document.getElementById('error-badge');
         const input = document.getElementById('talk-input');
@@ -477,9 +517,10 @@ async function main() {
     // 3. CLOSED-POPUP HANDOFF (B4.2): clipboard via offscreen, active Bro Chat tab, badge, Shadow DOM notice
     console.log('3. Testing closed-popup handoff (clipboard, active Bro Chat tab, badge "!", Shadow DOM notice)...');
     await resetRuntime();
-    await setSettings(HARNESS_CHAT_URL);
+    if (realTab) { broTab = realTab; }
+    await setSettings(BRO_URL);
     const broTabId = await getBroTabId();
-    assert.ok(broTabId, 'Harness Bro Chat tab must be discoverable by the extension');
+    assert.ok(broTabId, 'Bro Chat tab must be discoverable by the extension');
     // A real failure after checkReady has already injected the adapter; the forced failure skips checkReady.
     await swEval(`chrome.scripting.executeScript({ target: { tabId: ${broTabId} }, files: ['adapter.js'], world: 'ISOLATED' }).then(() => true)`);
 
@@ -548,7 +589,7 @@ async function main() {
     // 5. BROWSER RESTART DEFERRED HANDOFF (B4.3): real boot path, then explicit button
     console.log('5. Testing Browser Restart INTERRUPTED deferred handoff (zero startup focus jumps)...');
     await resetRuntime();
-    await setSettings(HARNESS_CHAT_URL);
+    await setSettings(BRO_URL);
     await swEval(`chrome.action.setBadgeText({ text: '' })`);
     await writeClipboard(SENTINEL);
     await activateAnchor();
@@ -658,7 +699,11 @@ async function main() {
       console.error('⚠ Environment restore failed:', err.message);
     } finally {
       if (anchor) await closeTab(anchor).catch(() => {});
-      if (broTab) await closeTab(broTab).catch(() => {});
+      if (realTab) {
+        await evalIn(realTab.cdp, `document.getElementById('ttb-handoff-host')?.remove()`).catch(() => {});
+        realTab.cdp.close();
+      }
+      if (fixtureTab) await closeTab(fixtureTab).catch(() => {});
       for (const cdp of openedCdps) cdp.close();
       swCdp?.close();
       browserCdp?.close();
