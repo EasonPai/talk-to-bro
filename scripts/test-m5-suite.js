@@ -17,7 +17,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
 
-const CDP_HOST = '[::1]';
+const CDP_HOST = process.env.CDP_HOST || '[::1]';
 const CDP_PORT = 9222;
 
 function calculateExtensionId(dirPath) {
@@ -68,28 +68,15 @@ class CdpClient {
 }
 
 async function triggerExtensionReload(extId) {
-  const extPageRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?chrome://extensions`, { method: 'PUT' });
-  const extTab = await extPageRes.json();
-  const cdp = new CdpClient(extTab.webSocketDebuggerUrl);
+  // chrome://extensions reloadItem never resolves for --load-extension builds (CfT 156); reload from inside the SW instead.
+  const targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+  const sw = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(extId));
+  if (!sw) throw new Error(`Service Worker for ${extId} not found`);
+  const cdp = new CdpClient(sw.webSocketDebuggerUrl);
   await cdp.connect();
-
-  await new Promise(r => setTimeout(r, 800));
-  await cdp.send('Runtime.evaluate', {
-    expression: `
-      (async () => {
-        const manager = document.querySelector('extensions-manager');
-        const itemList = manager?.shadowRoot?.querySelector('extensions-item-list');
-        const item = itemList?.shadowRoot?.querySelector('#${extId}');
-        if (!item) throw new Error('Extension ${extId} not found in extensions-manager');
-        await item.delegate.reloadItem(item.data.id);
-      })()
-    `,
-    awaitPromise: true
-  });
-
-  await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/close/${extTab.id}`).catch(() => {});
+  await cdp.send('Runtime.evaluate', { expression: 'chrome.runtime.reload()' }).catch(() => {});
   cdp.close();
-  await new Promise(r => setTimeout(r, 1200));
+  await new Promise(r => setTimeout(r, 2500));
 }
 
 async function main() {
