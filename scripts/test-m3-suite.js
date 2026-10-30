@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { SCRATCH_EXT_DIR, syncDistToScratch } from './lib/scratch-ext.mjs';
 import { SELECTORS } from '../src/adapter/selectors.ts';
 import { isSameGeminiChat } from '../src/sw/tab.ts';
 import { validateBroChatUrl } from '../src/shared/validate.ts';
@@ -15,10 +16,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
+const LOADED_EXT_DIR = SCRATCH_EXT_DIR;
 
 const CDP_HOST = '[::1]';
-const CDP_PORT = 9222;
+const CDP_PORT = Number(process.env.CDP_PORT) || 9222;
 
 function calculateExtensionId(dirPath) {
   const hash = crypto.createHash('sha256').update(dirPath).digest('hex').slice(0, 32);
@@ -166,15 +167,9 @@ async function main() {
   console.log(`[CfT Setup] Expected Extension ID: ${EXPECTED_EXT_ID}`);
   console.log(`[CfT Setup] Approved Target Bro Chat URL: ${TARGET_BRO_URL}`);
 
-  // 1. Mount dist/ artifacts into loaded extension directory with temporary backup
-  const backupDir = path.join(ROOT_DIR, 'spikes/m0-b-backup-m3-tmp');
-  if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
-  fs.cpSync(LOADED_EXT_DIR, backupDir, { recursive: true });
 
   try {
-    for (const file of fs.readdirSync(DIST_DIR)) {
-      fs.copyFileSync(path.join(DIST_DIR, file), path.join(LOADED_EXT_DIR, file));
-    }
+    syncDistToScratch(DIST_DIR);
     console.log('[CfT Setup] Mounted built dist artifacts into active extension directory.');
 
     // 2. Trigger clean item reload in Chrome for Testing
@@ -485,18 +480,6 @@ async function main() {
     console.log('       [Static Contracts + Live CfT DOM Execution Validated]    ');
     console.log('================================================================\n');
   } finally {
-    // Clean restore of spikes/m0-b directory and reload in Chrome
-    if (fs.existsSync(backupDir)) {
-      fs.rmSync(LOADED_EXT_DIR, { recursive: true, force: true });
-      fs.cpSync(backupDir, LOADED_EXT_DIR, { recursive: true });
-      fs.rmSync(backupDir, { recursive: true, force: true });
-      try {
-        await triggerExtensionReload(EXPECTED_EXT_ID);
-        console.log('[CfT Cleanup] Cleaned up temporary test mount; restored spikes/m0-b.');
-      } catch {
-        console.log('[CfT Cleanup] Cleaned up temporary test mount; restored spikes/m0-b files.');
-      }
-    }
   }
 }
 

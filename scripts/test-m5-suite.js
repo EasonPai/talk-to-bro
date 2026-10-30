@@ -10,15 +10,16 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SCRATCH_EXT_DIR, syncDistToScratch } from './lib/scratch-ext.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
+const LOADED_EXT_DIR = SCRATCH_EXT_DIR;
 
 const CDP_HOST = process.env.CDP_HOST || '[::1]';
-const CDP_PORT = 9222;
+const CDP_PORT = Number(process.env.CDP_PORT) || 9222;
 
 function calculateExtensionId(dirPath) {
   const hash = crypto.createHash('sha256').update(dirPath).digest('hex').slice(0, 32);
@@ -67,10 +68,32 @@ class CdpClient {
   }
 }
 
+async function findSwTarget(extId) {
+  const list = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
+  return list.find(t => t.type === 'service_worker' && t.url && t.url.includes(extId));
+}
+
+// A reloaded (or freshly loaded) MV3 worker stays idle until an extension page wakes it.
+async function ensureSwTarget(extId) {
+  let sw = await findSwTarget(extId);
+  if (sw) return sw;
+  const wakeRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/new?${encodeURIComponent(`chrome-extension://${extId}/popup.html`)}`, { method: 'PUT' });
+  const wakeTab = await wakeRes.json();
+  const wakeCdp = new CdpClient(wakeTab.webSocketDebuggerUrl);
+  await wakeCdp.connect();
+  await wakeCdp.send('Runtime.evaluate', { expression: "chrome.runtime.sendMessage({ type: 'ttb-harness-wake' }).catch(() => {})" }).catch(() => {});
+  wakeCdp.close();
+  for (let i = 0; i < 20 && !sw; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    sw = await findSwTarget(extId);
+  }
+  await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/close/${wakeTab.id}`).catch(() => {});
+  return sw;
+}
+
 async function triggerExtensionReload(extId) {
   // chrome://extensions reloadItem never resolves for --load-extension builds (CfT 156); reload from inside the SW instead.
-  const targets = await (await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`)).json();
-  const sw = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(extId));
+  const sw = await ensureSwTarget(extId);
   if (!sw) throw new Error(`Service Worker for ${extId} not found`);
   const cdp = new CdpClient(sw.webSocketDebuggerUrl);
   await cdp.connect();
@@ -116,19 +139,12 @@ async function main() {
   const extId = calculateExtensionId(LOADED_EXT_DIR);
   console.log(`Extension ID: ${extId}`);
 
-  // Backup spikes/m0-b directory
-  const backupDir = path.join(ROOT_DIR, 'spikes/m0-b-backup-m5-tmp');
-  if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
-  fs.cpSync(LOADED_EXT_DIR, backupDir, { recursive: true });
-
   let swCdp = null;
 
   try {
     // Synchronize build to loaded unpacked extension directory
-    console.log('1. Syncing dist/ assets into spikes/m0-b/ ...');
-    for (const file of fs.readdirSync(DIST_DIR)) {
-      fs.copyFileSync(path.join(DIST_DIR, file), path.join(LOADED_EXT_DIR, file));
-    }
+    console.log('1. Syncing dist/ assets into .scratch/talk-to-bro-personally/cft-ext/ ...');
+    syncDistToScratch(DIST_DIR);
 
     // Test CDP connectivity
     console.log(`2. Connecting to Chrome for Testing (port ${CDP_PORT})...`);
@@ -141,9 +157,7 @@ async function main() {
     console.log('   ✓ Extension successfully reloaded.\n');
 
     // Locate Extension Service Worker target
-    const targetsRes = await fetch(`http://${CDP_HOST}:${CDP_PORT}/json/list`);
-    const targets = await targetsRes.json();
-    const swTarget = targets.find(t => t.type === 'service_worker' && t.url && t.url.includes(extId));
+    const swTarget = await ensureSwTarget(extId);
     assert.ok(swTarget, `Service Worker for Extension ID ${extId} must be running`);
 
     swCdp = new CdpClient(swTarget.webSocketDebuggerUrl);
@@ -337,16 +351,6 @@ async function main() {
   } finally {
     if (swCdp) {
       swCdp.close();
-    }
-    // Clean restore of spikes/m0-b directory
-    if (fs.existsSync(backupDir)) {
-      fs.rmSync(LOADED_EXT_DIR, { recursive: true, force: true });
-      fs.cpSync(backupDir, LOADED_EXT_DIR, { recursive: true });
-      fs.rmSync(backupDir, { recursive: true, force: true });
-      try {
-        await triggerExtensionReload(extId);
-      } catch {}
-      console.log('   ✓ Temporary test mount cleaned up; restored spikes/m0-b.\n');
     }
   }
 

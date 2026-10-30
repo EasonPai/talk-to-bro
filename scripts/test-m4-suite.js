@@ -7,17 +7,18 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SCRATCH_EXT_DIR, syncDistToScratch } from './lib/scratch-ext.mjs';
 import { htmlToMarkdown } from '../src/adapter/html-to-md.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const LOADED_EXT_DIR = path.join(ROOT_DIR, 'spikes/m0-b');
+const LOADED_EXT_DIR = SCRATCH_EXT_DIR;
 const GOLDENS_DIR = path.join(ROOT_DIR, 'tests/fixtures/goldens');
 
 const CDP_HOST = '[::1]';
-const CDP_PORT = 9222;
+const CDP_PORT = Number(process.env.CDP_PORT) || 9222;
 
 function calculateExtensionId(dirPath) {
   const hash = crypto.createHash('sha256').update(dirPath).digest('hex').slice(0, 32);
@@ -178,11 +179,6 @@ async function main() {
   console.log(`[CfT Setup] Target Extension Directory: ${LOADED_EXT_DIR}`);
   console.log(`[CfT Setup] Expected Extension ID: ${EXPECTED_EXT_ID}`);
 
-  // Backup spikes/m0-b
-  const backupDir = path.join(ROOT_DIR, 'spikes/m0-b-backup-m4-tmp');
-  if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true });
-  fs.cpSync(LOADED_EXT_DIR, backupDir, { recursive: true });
-
   // Backup system clipboard
   let origClipboard = '';
   try {
@@ -193,9 +189,7 @@ async function main() {
 
   try {
     // Mount dist artifacts into loaded extension directory
-    for (const file of fs.readdirSync(DIST_DIR)) {
-      fs.copyFileSync(path.join(DIST_DIR, file), path.join(LOADED_EXT_DIR, file));
-    }
+    syncDistToScratch(DIST_DIR);
     console.log('[CfT Setup] Mounted built dist artifacts into active extension directory.');
 
     // Reload extension
@@ -493,19 +487,6 @@ async function main() {
         const proc = spawnSync('pbcopy', { input: origClipboard, encoding: 'utf-8' });
         console.log('[CfT Cleanup] Developer clipboard restored.');
       } catch {}
-    }
-
-    // Clean restore of spikes/m0-b directory and reload in Chrome
-    if (fs.existsSync(backupDir)) {
-      fs.rmSync(LOADED_EXT_DIR, { recursive: true, force: true });
-      fs.cpSync(backupDir, LOADED_EXT_DIR, { recursive: true });
-      fs.rmSync(backupDir, { recursive: true, force: true });
-      try {
-        await triggerExtensionReload(EXPECTED_EXT_ID);
-        console.log('[CfT Cleanup] Cleaned up temporary test mount; restored spikes/m0-b.');
-      } catch {
-        console.log('[CfT Cleanup] Cleaned up temporary test mount; restored spikes/m0-b files.');
-      }
     }
   }
 }
