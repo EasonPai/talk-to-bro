@@ -24,7 +24,7 @@ import { evaluateTick, TOTAL_TIMEOUT_MS } from '../shared/tick.ts';
 import { validateBroChatUrl } from '../shared/validate.ts';
 import { reconcile } from './reconcile.ts';
 import { getBootReadyPromise, type BootResult } from './boot.ts';
-import { performHandoff, isPopupOpen } from './handoff.ts';
+import { performHandoff, continueHandoffAfterPopupClose } from './handoff.ts';
 import { getFailureInfo } from '../shared/failures.ts';
 import type { DebugV1Storage } from '../shared/types.ts';
 import type { TabsApiLike } from './tab.ts';
@@ -102,25 +102,11 @@ export class TalkRunner {
 
     performHandoff(handoffDeps, failedTalk)
       .then((handoffRes) => {
-        // If popup was open and countdown started, set continuation timer
-        // If user closes popup during countdown, SW automatically completes the handoff
+        // Popup open: it runs the countdown; if it closes uncancelled, the SW completes the handoff
         if (handoffRes.status === 'pending') {
-          setTimeout(async () => {
-            try {
-              const rt = await getRuntimeStorage(this.storageLocal);
-              if (
-                rt.lastTalk?.id === failedTalk.id &&
-                rt.lastTalk.handoff?.status === 'pending'
-              ) {
-                const open = await isPopupOpen(this.runtimeApi);
-                if (!open) {
-                  await performHandoff(handoffDeps, rt.lastTalk, { forceClosed: true });
-                }
-              }
-            } catch (err) {
-              console.warn('[TalkRunner] Popup close continuation error:', err);
-            }
-          }, 1800);
+          continueHandoffAfterPopupClose(handoffDeps, failedTalk.id).catch((err) =>
+            console.warn('[TalkRunner] Popup close continuation error:', err)
+          );
         }
       })
       .catch((err) => console.warn('[TalkRunner] Handoff execution error:', err));

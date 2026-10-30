@@ -183,6 +183,12 @@ export async function performHandoff(
       );
     }
 
+    // A concurrent request (e.g. popup switch_tab and SW continuation) may have already completed
+    const persistedStatus = currentRuntime.lastTalk?.handoff?.status;
+    if ((persistedStatus === 'done' || persistedStatus === 'partial') && !options?.authorizeDeferred) {
+      return currentRuntime.lastTalk!.handoff!;
+    }
+
     // Set Action Badge to '!'
     if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {
       chrome.action.setBadgeText({ text: '!' }).catch(() => {});
@@ -287,4 +293,36 @@ export async function performHandoff(
   } finally {
     activeHandoffClaims.delete(talk.id);
   }
+}
+
+export const POPUP_CLOSE_POLL_MS = 300;
+export const POPUP_CLOSE_MAX_WAIT_MS = 10000;
+
+/**
+ * Closed-popup continuation: while the Talk's handoff is still 'pending' (uncancelled),
+ * waits for the popup to close, then completes the handoff once via the closed-popup path.
+ * Stops without any external call if the handoff was cancelled, settled by the popup,
+ * or the Talk was superseded by a newer one.
+ */
+export async function continueHandoffAfterPopupClose(
+  deps: HandoffDeps,
+  talkId: string,
+  opts?: { pollMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void> }
+): Promise<TalkHandoff | null> {
+  const pollMs = opts?.pollMs ?? POPUP_CLOSE_POLL_MS;
+  const maxWaitMs = opts?.maxWaitMs ?? POPUP_CLOSE_MAX_WAIT_MS;
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise<void>(res => setTimeout(res, ms)));
+
+  for (let waited = 0; waited <= maxWaitMs; waited += pollMs) {
+    const rt = await getRuntimeStorage(deps.storageLocal);
+    const current = rt.lastTalk;
+    if (!current || current.id !== talkId || current.handoff?.status !== 'pending') {
+      return null;
+    }
+    if (!(await isPopupOpen(deps.runtimeApi))) {
+      return performHandoff(deps, current, { forceClosed: true });
+    }
+    await sleep(pollMs);
+  }
+  return null;
 }

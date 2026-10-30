@@ -1,7 +1,7 @@
 // tests/unit/handoff.test.ts
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { performHandoff, isPopupOpen, type HandoffDeps } from '../../src/sw/handoff.ts';
+import { performHandoff, isPopupOpen, continueHandoffAfterPopupClose, type HandoffDeps } from '../../src/sw/handoff.ts';
 import { createTalk, transition } from '../../src/shared/talk-machine.ts';
 import { FakeAdapter } from '../helpers/fake-adapter.ts';
 import type { StorageAreaLike } from '../../src/shared/storage.ts';
@@ -303,4 +303,115 @@ test('Handoff - Pre-action persisted cancelled check prevents execution', async 
   const res = await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true });
   assert.equal(res.status, 'cancelled');
   assert.equal(tabSwitchCalled, false, 'Tab switch must not be called when storage is cancelled');
+});
+
+async function setupPendingB3(popupStates: boolean[]) {
+  const storageLocal = new MemoryStorage();
+  const calls = { offscreen: 0, tabs: 0, windows: 0 };
+  let talk = createTalk('B3 Talk', 1000);
+  talk = transition(talk, { type: 'FAIL', code: 'TIMEOUT_IDLE' }, 1010);
+  talk = { ...talk, handoff: { status: 'pending', copied: false, focused: false } };
+  await storageLocal.set({
+    'runtime:v1': { lastTalk: talk, logByTalkId: {} },
+    'settings:v1': { broChatUrl: 'https://gemini.google.com/app/x', updatedAt: 1000 }
+  });
+  (globalThis as any).chrome = {
+    runtime: { lastError: undefined, sendMessage: (_m: any, cb: any) => cb({ ok: true }) }
+  };
+  let polls = 0;
+  const deps: HandoffDeps = {
+    storageLocal,
+    adapter: new FakeAdapter(),
+    runtimeApi: {
+      getContexts: async (f: any) => {
+        if (f.contextTypes?.includes('POPUP')) {
+          const open = popupStates[Math.min(polls++, popupStates.length - 1)];
+          return open ? [{ contextType: 'POPUP' }] : [];
+        }
+        return [];
+      }
+    },
+    offscreenApi: {
+      createDocument: async () => { calls.offscreen++; },
+      closeDocument: async () => {}
+    },
+    tabsApi: {
+      query: async () => [{ id: 501, windowId: 77, url: 'https://gemini.google.com/app/x', pinned: true }],
+      update: async () => { calls.tabs++; return {} as any; }
+    } as any,
+    windowsApi: { update: async () => { calls.windows++; return {} as any; } }
+  };
+  return { storageLocal, deps, talk, calls };
+}
+
+test.afterEach(() => { delete (globalThis as any).chrome; });
+
+const noSleep = { pollMs: 10, maxWaitMs: 100, sleep: async () => {} };
+const readTalk = async (s: MemoryStorage) => (await s.get('runtime:v1'))['runtime:v1'].lastTalk as Talk;
+
+test('TC-B3.1 popup closes during pending countdown -> handoff completes exactly once', async () => {
+  const { storageLocal, deps, talk, calls } = await setupPendingB3([true, true, false]);
+  const res = await continueHandoffAfterPopupClose(deps, talk.id, noSleep);
+  assert.ok(res);
+  assert.ok(res!.status === 'done' || res!.status === 'partial');
+  assert.equal(res!.focused, true);
+  assert.equal(calls.tabs, 1);
+  assert.equal(calls.windows, 1);
+  const saved = await readTalk(storageLocal);
+  assert.equal(saved.handoff?.status, res!.status);
+  assert.equal(saved.handoff?.copied, res!.copied);
+
+  // A second continuation or a late popup switch_tab request must not re-execute
+  assert.equal(await continueHandoffAfterPopupClose(deps, talk.id, noSleep), null);
+  await performHandoff(deps, talk, { forceClosed: true });
+  assert.equal(calls.tabs, 1);
+  assert.equal(calls.windows, 1);
+});
+
+test('TC-B3.2 cancel then popup disconnect -> zero external calls, status stays cancelled', async () => {
+  const { storageLocal, deps, talk, calls } = await setupPendingB3([true, false]);
+  const rt = (await storageLocal.get('runtime:v1'))['runtime:v1'];
+  await storageLocal.set({
+    'runtime:v1': { ...rt, lastTalk: { ...talk, handoff: { status: 'cancelled', copied: false, focused: false } } }
+  });
+  const res = await continueHandoffAfterPopupClose(deps, talk.id, noSleep);
+  assert.equal(res, null);
+  assert.deepEqual(calls, { offscreen: 0, tabs: 0, windows: 0 });
+  assert.equal((await readTalk(storageLocal)).handoff?.status, 'cancelled');
+});
+
+test('TC-B3.3 two concurrent switch requests -> one execution', async () => {
+  const { deps, talk, calls } = await setupPendingB3([false]);
+  const [a, b] = await Promise.all([
+    performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true }),
+    performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true })
+  ]);
+  assert.equal(calls.tabs, 1);
+  assert.equal(calls.windows, 1);
+  assert.ok(a.status === 'done' || b.status === 'done');
+  // A later request still holding the stale pending Talk must not execute again
+  await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true });
+  assert.equal(calls.tabs, 1);
+});
+
+test('TC-B3.4 stale talkId completion never overwrites a newer Talk', async () => {
+  const { storageLocal, deps, talk, calls } = await setupPendingB3([false]);
+  let newer = createTalk('Newer Talk', 2000);
+  const origUpdate = (deps.tabsApi as any).update;
+  // The newer Talk replaces lastTalk while the older handoff is in flight
+  (deps.tabsApi as any).update = async (...args: any[]) => {
+    const rt = (await storageLocal.get('runtime:v1'))['runtime:v1'];
+    await storageLocal.set({ 'runtime:v1': { ...rt, lastTalk: newer } });
+    return origUpdate(...args);
+  };
+  await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true });
+  assert.equal(calls.tabs, 1);
+  assert.deepEqual(await readTalk(storageLocal), newer);
+
+  // Older id after the newer Talk is stored: no external calls at all
+  (deps.tabsApi as any).update = origUpdate;
+  assert.equal(await continueHandoffAfterPopupClose(deps, talk.id, noSleep), null);
+  await performHandoff(deps, talk, { forceClosed: true, alreadyCopied: true });
+  assert.equal(calls.tabs, 1);
+  assert.deepEqual(await readTalk(storageLocal), newer);
 });
