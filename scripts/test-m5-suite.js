@@ -84,7 +84,17 @@ class CdpClient {
 }
 
 async function evalIn(cdp, expression) {
-  const res = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  let res;
+  // A context replaced by a late navigation/reload rejects with these; observed state decides when to retry.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+      break;
+    } catch (err) {
+      if (attempt >= 20 || !/Execution context was destroyed|Cannot find context/.test(err.message)) throw err;
+      await sleep(250);
+    }
+  }
   if (res.exceptionDetails) {
     throw new Error(`Eval failed: ${res.exceptionDetails.exception?.description || res.exceptionDetails.text}`);
   }
@@ -554,7 +564,11 @@ async function main() {
       } } });
     })()`);
     await swEval(`chrome.storage.session.clear()`);
+    // Window focus is OS-level and CDP-created extension pages can flip it; snapshot while an identical
+    // harness page is open so the focus comparison reflects boot only, not the harness's own page.
+    const baselinePage = await openExtPage('options.html');
     const before = await tabsSnapshot();
+    await closeTab(baselinePage);
 
     await swEval('chrome.runtime.reload()').catch(() => {});
     swCdp.close();
