@@ -34,6 +34,7 @@ class FakeTabsApi implements TabsApiLike {
       selected: false,
       discarded: false,
       autoDiscardable: true,
+      frozen: false,
       groupId: -1,
       status: 'complete',
       url: createProperties.url
@@ -131,6 +132,7 @@ test('Tab Lifecycle - ensureBroTab reuses cached tab from session storage and en
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });
@@ -165,6 +167,7 @@ test('Tab Lifecycle - ensureBroTab discovers open tab, pins it, and updates sess
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });
@@ -175,7 +178,7 @@ test('Tab Lifecycle - ensureBroTab discovers open tab, pins it, and updates sess
   assert.equal(tabsApi.createCalls.length, 0);
 
   // Check cache updated in session storage
-  const sessData = await session.get('session:v1');
+  const sessData: any = await session.get('session:v1');
   assert.equal(sessData['session:v1']?.broTab?.tabId, 201);
 });
 

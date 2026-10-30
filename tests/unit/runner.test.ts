@@ -6,7 +6,8 @@ import { FakeAdapter, MemoryStorage, FakeAlarms } from '../helpers/fake-adapter.
 import { getRuntimeStorage, saveSettingsStorage, saveSessionStorage } from '../../src/shared/storage.ts';
 import { computeTextSignature } from '../../src/shared/tick.ts';
 import { resetBootForTesting } from '../../src/sw/boot.ts';
-import type { ProbeResult } from '../../src/shared/types.ts';
+import { getFailureInfo } from '../../src/shared/failures.ts';
+import type { FailureCode, ProbeResult } from '../../src/shared/types.ts';
 
 function createHarness() {
   resetBootForTesting();
@@ -635,6 +636,30 @@ test('Talk Runner - Fault injection via debug:v1.forceFailure in submitTalk', as
   assert.equal(res2.talk?.phase, 'failed');
   assert.equal(res2.talk?.failure?.code, 'QUOTA_EXHAUSTED');
   assert.equal(res2.talk?.failure?.stage, 'read');
+});
+
+test('Talk Runner - forceFailure drives every one of the 14 FailureCodes to a failed Talk', async () => {
+  const codes: FailureCode[] = [
+    'NO_BRO_CHAT', 'BRO_CHAT_MISSING', 'NOT_SIGNED_IN', 'INPUT_NOT_FOUND', 'EDITOR_BUSY',
+    'SUBMIT_UNCONFIRMED', 'TIMEOUT_IDLE', 'TIMEOUT_TOTAL', 'QUOTA_EXHAUSTED', 'TAB_UNRESPONSIVE',
+    'TAB_CLOSED', 'EXTRACT_FAILED', 'INTERRUPTED', 'INTERNAL'
+  ];
+  assert.equal(new Set(codes).size, 14);
+  for (const code of codes) {
+    const h = createHarness();
+    h.setTime(1000);
+    await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/test', updatedAt: 1 });
+    await h.runner.boot();
+    await h.storageLocal.set({ 'debug:v1': { forceFailure: code } });
+
+    const res = await h.runner.submit(`Inject ${code}`);
+    assert.equal(res.accepted, true, code);
+    assert.equal(res.talk?.phase, 'failed', code);
+    assert.equal(res.talk?.failure?.code, code);
+    assert.ok(getFailureInfo(code).userMessage.length > 0, `${code} must have a user-facing message`);
+    const debugAfter = ((await h.storageLocal.get('debug:v1'))['debug:v1'] || {}) as Record<string, any>;
+    assert.equal(debugAfter.forceFailure, undefined, `${code} injection must be consumed`);
+  }
 });
 
 test('Talk Runner - Fault injection via debug:v1.forceFailure in tick', async () => {

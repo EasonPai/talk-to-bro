@@ -30,6 +30,7 @@ class MockTabsApi implements TabsApiLike {
       selected: false,
       discarded: false,
       autoDiscardable: true,
+      frozen: false,
       groupId: -1,
       status: 'complete',
       url: props.url
@@ -72,6 +73,7 @@ test('RealBroAdapter - checkReady checks settings, ensures tab, pings/injects an
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });
@@ -131,6 +133,7 @@ test('RealBroAdapter - send dispatches TTB_INSERT_AND_SEND and handles submissio
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });
@@ -192,6 +195,7 @@ test('RealBroAdapter - probe and extract forwarding and response handling', asyn
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });
@@ -248,6 +252,7 @@ test('RealBroAdapter - Message failure fallback handling for probe and extract',
     selected: false,
     discarded: false,
     autoDiscardable: true,
+    frozen: false,
     groupId: -1,
     url: targetUrl
   });

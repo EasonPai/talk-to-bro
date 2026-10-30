@@ -54,10 +54,10 @@ function createMockMultiTurnDom() {
       this.attributes[name] = value;
     }
 
-    querySelector(selector: string) {
+    querySelector(selector: string): MockElement | null {
       for (const child of this.children) {
         if (child.matches(selector)) return child;
-        const found = child.querySelector(selector);
+        const found: MockElement | null = child.querySelector(selector);
         if (found) return found;
       }
       return null;

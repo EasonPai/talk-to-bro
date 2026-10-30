@@ -7,7 +7,7 @@ import {
   stageOf,
   phaseDeadlineOf
 } from '../../src/shared/talk-machine.ts';
-import type { FailureCode } from '../../src/shared/types.ts';
+import type { FailureCode, Talk } from '../../src/shared/types.ts';
 
 test('Talk State Machine - Initial creation and stage categorization', () => {
   const t0 = 1700000000000;
@@ -80,7 +80,7 @@ test('Talk State Machine - Sequential Happy Path Transitions', () => {
 
   // Alternative path: resolving_tab and extracting transitions
   const tAlt = 1700000050000;
-  let resolvingTalk = { ...createTalk('Alt', tAlt), phase: 'resolving_tab' as const, phaseDeadlineAt: tAlt + 15000 };
+  let resolvingTalk: Talk = { ...createTalk('Alt', tAlt), phase: 'resolving_tab' as const, phaseDeadlineAt: tAlt + 15000 };
   resolvingTalk = transition(resolvingTalk, { type: 'TAB_RESOLVED', tabId: 88 }, tAlt + 10);
   assert.equal(resolvingTalk.phase, 'sending');
   assert.equal(resolvingTalk.tabId, 88);
