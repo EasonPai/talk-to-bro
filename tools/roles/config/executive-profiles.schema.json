@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutiveEnvironmentProfiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profiles"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schemaVersion": {"const": 1},
+    "profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "roles"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1},
+          "seats": {
+            "type": "object",
+            "propertyNames": {"pattern": "^(Engineer|QA)#[2-9][0-9]?$"},
+            "additionalProperties": {"$ref": "#/definitions/Execution"}
+          },
+          "roles": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["CEO", "CTO", "PM", "Architect", "Engineer", "Designer", "Consultant", "QA"],
+            "properties": {
+              "CEO": {"$ref": "#/definitions/Execution"},
+              "CTO": {"$ref": "#/definitions/Execution"},
+              "PM": {"$ref": "#/definitions/Execution"},
+              "Architect": {"$ref": "#/definitions/Execution"},
+              "Engineer": {"$ref": "#/definitions/Execution"},
+              "Designer": {"$ref": "#/definitions/Execution"},
+              "Consultant": {"$ref": "#/definitions/Execution"},
+              "QA": {"$ref": "#/definitions/Execution"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cli", "model", "effort"],
+      "properties": {
+        "cli": {"enum": ["copilot", "agy", "pi", null]},
+        "model": {"type": ["string", "null"], "minLength": 1},
+        "effort": {"enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max", null]}
+      },
+      "if": {"properties": {"cli": {"type": "string"}}},
+      "then": {"properties": {"model": {"type": "string", "minLength": 1}}}
+    }
+  }
+}

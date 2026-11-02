@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecutiveRolesConfig",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "revision",
+    "teamId",
+    "roles",
+    "policy"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "teamId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "correctionRules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "required": [
+        "CEO",
+        "CTO",
+        "PM",
+        "Architect",
+        "Engineer",
+        "Designer",
+        "Consultant",
+        "QA"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "CEO": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "CTO": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "PM": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "Architect": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "Engineer": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "Designer": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "Consultant": {
+          "$ref": "#/definitions/RoleDefinition"
+        },
+        "QA": {
+          "$ref": "#/definitions/RoleDefinition"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "assignmentRequired",
+        "titleIsAuthority",
+        "restoreTasks",
+        "respectExistingApprovalGates",
+        "supervisorPollingAllowed",
+        "reportingMode",
+        "requiredReportEvents",
+        "reportRouteRequired",
+        "deliveryRequired",
+        "ackRequired",
+        "awaitingTimeoutMs",
+        "escalateOnTimeout"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "assignmentRequired": {
+          "type": "boolean"
+        },
+        "titleIsAuthority": {
+          "type": "boolean"
+        },
+        "restoreTasks": {
+          "type": "boolean"
+        },
+        "respectExistingApprovalGates": {
+          "type": "boolean"
+        },
+        "supervisorPollingAllowed": {
+          "type": "boolean"
+        },
+        "reportingMode": {
+          "type": "string",
+          "enum": [
+            "event-driven"
+          ]
+        },
+        "requiredReportEvents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "reportRouteRequired": {
+          "type": "boolean"
+        },
+        "deliveryRequired": {
+          "type": "boolean"
+        },
+        "ackRequired": {
+          "type": "boolean"
+        },
+        "awaitingTimeoutMs": {
+          "type": "integer",
+          "minimum": 60000
+        },
+        "escalateOnTimeout": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "RoleDefinition": {
+      "type": "object",
+      "required": [
+        "responsibilities",
+        "reportsTo",
+        "assignmentPolicy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "responsibilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "reportsTo": {
+          "type": "string",
+          "enum": [
+            "human",
+            "CEO",
+            "CTO",
+            "PM",
+            "Architect",
+            "Engineer",
+            "Designer",
+            "Consultant",
+            "QA",
+            "assigner"
+          ]
+        },
+        "assignmentPolicy": {
+          "type": "object",
+          "required": [
+            "allowedAssigners"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "allowedAssigners": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "human",
+                  "CEO",
+                  "CTO",
+                  "PM",
+                  "Architect",
+                  "Engineer",
+                  "Designer",
+                  "Consultant",
+                  "QA"
+                ]
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "stageHooks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "requiredSkill": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "outputArtifact": {
+                "type": "string"
+              },
+              "requiredActions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

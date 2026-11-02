@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "path": ".gemini/skills",
+      "exclude": [
+        "poteto-.*",
+        "principle-.*"
+      ]
+    }
+  ]
+}

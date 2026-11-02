@@ -1,0 +1,96 @@
+{
+  "$schema": "./executive-profiles.schema.json",
+  "schemaVersion": 1,
+  "profiles": {
+    "copilot-team": {
+      "description": "Default all-Copilot team (same as agentic-development). Edit model/effort to match installed models before profile-select.",
+      "roles": {
+        "CEO": {
+          "cli": "copilot",
+          "model": "gpt-6.1-sol",
+          "effort": "medium"
+        },
+        "CTO": {
+          "cli": "copilot",
+          "model": "claude-opus-5.5",
+          "effort": "high"
+        },
+        "PM": {
+          "cli": "copilot",
+          "model": "claude-sonnet-5.5",
+          "effort": "low"
+        },
+        "Architect": {
+          "cli": "copilot",
+          "model": "claude-opus-5.5",
+          "effort": "high"
+        },
+        "Engineer": {
+          "cli": "copilot",
+          "model": "claude-sonnet-5.5",
+          "effort": "medium"
+        },
+        "Designer": {
+          "cli": "copilot",
+          "model": "claude-sonnet-5.5",
+          "effort": "medium"
+        },
+        "Consultant": {
+          "cli": "copilot",
+          "model": "gemini-4-argon",
+          "effort": "medium"
+        },
+        "QA": {
+          "cli": "copilot",
+          "model": "claude-haiku-5.5",
+          "effort": "low"
+        }
+      }
+    },
+    "unresolved-template": {
+      "description": "Template with unresolved CLI/model mappings. Copy to a named profile, set cli/model/effort explicitly, then run profile-select. Null values cannot launch.",
+      "roles": {
+        "CEO": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "CTO": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "PM": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Architect": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Engineer": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Designer": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Consultant": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "QA": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        }
+      }
+    }
+  }
+}

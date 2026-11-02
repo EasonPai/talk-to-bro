@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "ticketing": {
+    "skill": null,
+    "fallback": "file",
+    "fileDir": "docs/tickets",
+    "idPattern": "T-<n>",
+    "frontmatter": {
+      "status": "todo|in_progress|review|qa|done|blocked|cancelled (mirror written by `work`; do not edit)",
+      "milestone": "string",
+      "weight": "number (default 1)",
+      "retries": "number (mirror of QA failures written by `work verify --fail`)",
+      "followups": "number (non-blocking QA findings filed as follow-up tickets)"
+    }
+  },
+  "plans": {
+    "dir": "docs/plans"
+  },
+  "workflow": {
+    "requireTicketAndPlanForDispatch": true,
+    "maxQaRetries": 2,
+    "stallMinutes": 30,
+    "handoffMinutes": 3,
+    "boardHandoffMinutes": 10,
+    "retryMinutes": 30,
+    "idleMinutes": 2,
+    "maxWakes": 2,
+    "watchMinutes": 5,
+    "archiveDays": 7,
+    "requireSkillLoadForDone": true,
+    "engineerWorktree": true,
+    "maxParallel": 2
+  },
+  "milestones": [],
+  "seats": {"Engineer": 2},
+  "seatsFormat": "{\"Engineer\": 2} (only Engineer and QA; missing = 1; Board-only)",
+  "skills": {
+    "*": ["poteto-mode"],
+    "PM": ["to-tickets", "to-spec"],
+    "Architect": ["grill-with-docs"],
+    "Engineer": ["implement"]
+  },
+  "skillLeaves": {},
+  "skillChain": {"autoReport": false},
+  "skillChainFormat": "{\"autoReport\": true, \"maxDepth\": 5 or {\"*\": 5, \"Consultant\": 8} (cap 10), \"followSkills\": \"router\" (default: skills reached from non-entry skills are indexed with ↗ but not expanded) or \"all\"} regenerates skill-chains/SUMMARY.md (and archives old records) after every skill-load; default false = only on dashboard/skill-report",
+  "skillLeavesFormat": "{\"router-skill\": [\"leaf-skill\", \"playbooks/x.md\"]} (optional; overrides automatic leaf detection)",
+  "skillsFormat": "{\"Engineer\": [\"tdd\"], \"*\": [\"skill-for-every-role\"]} (names only; bodies load on use)",
+  "browser": {
+    "headless": true
+  },
+  "milestoneFormat": "[{\"id\": \"M0\", \"stage\": \"spike|feature|hardening\"}] (plain string ids are allowed; stage defaults to feature)"
+}

@@ -1,0 +1,163 @@
+{
+  "$schema": "./executive-roles.schema.json",
+  "policy": {
+    "ackRequired": true,
+    "assignmentRequired": true,
+    "awaitingTimeoutMs": 1200000,
+    "deliveryRequired": true,
+    "escalateOnTimeout": true,
+    "reportRouteRequired": true,
+    "reportingMode": "event-driven",
+    "requiredReportEvents": [
+      "completed",
+      "blocked",
+      "received",
+      "awaiting_timeout"
+    ],
+    "respectExistingApprovalGates": true,
+    "restoreTasks": false,
+    "supervisorPollingAllowed": false,
+    "titleIsAuthority": false
+  },
+  "revision": "2026-10-30.4",
+  "roles": {
+    "Architect": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO"
+        ]
+      },
+      "reportsTo": "human",
+      "responsibilities": [
+        "董事會或 CEO 任命之架構諮詢",
+        "董事會或 CEO 安排之特定審查"
+      ]
+    },
+    "CEO": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human"
+        ]
+      },
+      "reportsTo": "human",
+      "responsibilities": [
+        "需求協調",
+        "優先級與資源決策",
+        "向董事會呈報"
+      ]
+    },
+    "CTO": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO"
+        ]
+      },
+      "reportsTo": "CEO",
+      "responsibilities": [
+        "技術設計、根因分析與開發計畫撰寫",
+        "計畫存於 plans 目錄並以 work submit-plan 送董事會；核准後由 PM 派工",
+        "技術決策與規格審核",
+        "技術風險把關（成果驗收由 QA 依工單測試案例執行）",
+        "實用主義驗收準則 (Stage-Proportionality)：驗收深度依里程碑階段（project-tools.json milestones 的 stage，未標示視為 feature）：spike 只驗主流程與核心假設；feature 只驗工單列出的 must 測項；hardening 才做極限例外防禦；嚴禁提前要求生產級硬化或自行加碼邊界",
+        "嚴格反範疇蔓延 (YAGNI & Anti-Scope-Creep)：審查嚴格受限於該工單承諾之範圍，嚴禁因非本工單承諾之周邊擴充需求（如非文字剪貼簿管理器、罕見系統狀態）阻擋結案",
+        "阻擋與建議分離 (Blockers vs Recommendations)：硬阻擋 (Reject) 僅限功能實質損壞、代碼誠信作假 (如寫死 true) 或異步死鎖；其餘極端 Edge Cases 應核准通過並記錄為後續技術備忘或建議另開工單",
+        "計畫存放於 project-tools.json 指定之 plans 目錄後才交付",
+        "撰寫開發計畫時，為每張工單寫明驗收條件與測試案例，每條測項標記 must（擋結案的驗收門檻）或 should（加分項，不擋結案）；Engineer 完成後不再做程式審查，只在 Engineer 回報計畫遺漏、矛盾或技術問題時介入"
+      ]
+    },
+    "Consultant": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO",
+          "CTO",
+          "PM"
+        ]
+      },
+      "optional": true,
+      "reportsTo": "assigner",
+      "responsibilities": [
+        "研究與獨立第二意見",
+        "向交辦者提供諮詢報告",
+        "不具實作、核准、退回或指揮其他角色之權限",
+        "選配角色：組建完整編制時不任命，董事會交辦 CEO 時才由 CEO（或 CTO、PM）任命；向交辦者回報"
+      ]
+    },
+    "Designer": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO"
+        ]
+      },
+      "reportsTo": "human",
+      "responsibilities": [
+        "UI/UX",
+        "視覺呈現",
+        "Artifact 美化",
+        "圖表設計"
+      ]
+    },
+    "Engineer": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "PM",
+          "CEO"
+        ]
+      },
+      "reportsTo": "PM",
+      "responsibilities": [
+        "依 PM 以 work dispatch 派發的工單與 CTO 計畫實作；收到後先 work ack，再 skill-load",
+        "實作並通過工單列出的測試案例",
+        "完成後以 work done --note 回報（附 outcome、提交與 skill chain），不直接交 QA，也不需回 CTO 審查；YOUR MOVE 未清空不結束回合",
+        "僅在計畫遺漏、矛盾或技術障礙時以 work block --reason 回報，由 PM 轉 CTO",
+        "工單因 QA 失敗退回時依 QA 證據修復後再 work done",
+        "只實作工單 must 測項與驗收條件所需範圍；驗收深度依里程碑階段（project-tools.json milestones 的 stage，未標示視為 feature）：spike 只驗主流程與核心假設；feature 只驗工單列出的 must 測項；hardening 才做極限例外防禦；不自行追逐工單外的 edge case，發現時回報 PM 列為後續建議"
+      ]
+    },
+    "PM": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO"
+        ]
+      },
+      "reportsTo": "human",
+      "responsibilities": [
+        "獨立規劃工作",
+        "零星開發工作",
+        "專案時程掌控與進度追蹤",
+        "每回合先執行 whoami，依 YOUR MOVE 與 QUEUE 行動；YOUR MOVE 未清空不結束回合",
+        "收件後以 work plan 交 CTO 規劃（僅錯字、文案、單一設定值或已核准重試可 work ready --reason）；ready 後以 work dispatch --to <Engineer 席位> --touches 派工",
+        "Engineer work done 後以 work dispatch --to QA 派驗收；QA work verify --fail 時工單自動退回原 Engineer 席位",
+        "依 project-tools.json 指定之方式開單，工單附上 CTO 計畫路徑",
+        "工單須包含 CTO 撰寫的測試案例；只有 QA work verify --pass 才算完成，再派下一張",
+        "QA 失敗次數由 work 記錄；超過 workflow.maxQaRetries（預設 2）時工單轉為 blocked 並待董事會決定，PM 送 CTO 與董事會決定放寬、拆單或繼續，再以 work unblock 或 work cancel 處理",
+        "QA 回報的後續建議收集為新工單（不阻擋原工單結案），並更新原工單 frontmatter followups 數量"
+      ]
+    },
+    "QA": {
+      "assignmentPolicy": {
+        "allowedAssigners": [
+          "human",
+          "CEO",
+          "PM"
+        ]
+      },
+      "reportsTo": "PM",
+      "responsibilities": [
+        "只依 PM 以 work dispatch 派發的驗收工單與其驗收條件、測試案例驗收 Engineer 的成果",
+        "嚴禁延伸需求、自行加測、修改需求或改寫程式",
+        "以 work verify 記錄結果：通過為 --pass 並附驗收證據；不通過為 --fail 並附重現步驟與失敗的測試案例",
+        "工單測試案例本身不清楚或矛盾時以 orchestration ask 詢問 PM，不自行解讀",
+        "只有 must 測項失敗、功能實質損壞、資料遺失或安全問題、結果造假可判 failed；should 測項與其他 edge case 一律列為後續建議（followups）附在 work verify 的 --evidence，不判失敗",
+        "驗收深度依里程碑階段（project-tools.json milestones 的 stage，未標示視為 feature）：spike 只驗主流程與核心假設；feature 只驗工單列出的 must 測項；hardening 才做極限例外防禦"
+      ]
+    }
+  },
+  "schemaVersion": 2,
+  "teamId": "talk-to-bro"
+}

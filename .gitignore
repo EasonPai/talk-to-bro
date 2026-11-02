@@ -5,3 +5,14 @@ coverage/
 .worktrees/
 .DS_Store
 *.log
+
+# Skill Manager managed agent skills symlinks/targets (machine-specific)
+.claude/skills/*
+.codex/skills/*
+.copilot/skills/*
+.cursor/skills/*
+.gemini/skills/*
+.gemini/antigravity/skills/*
+.grok/skills/*
+.hermes/skills/*
+.opencode/skills/*
