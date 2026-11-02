@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   getFailureInfo,
   stageOfFailure,
-  pipStateOf,
+  heroStateOf,
   type FailureInfo
 } from '../../src/shared/failures.ts';
 import type { FailureCode, Talk } from '../../src/shared/types.ts';
@@ -26,7 +26,7 @@ const ALL_14_FAILURE_CODES: FailureCode[] = [
   'INTERNAL'
 ];
 
-test('Failures Matrix - All 14 FailureCodes are exhaustively mapped with exact messages & Pip states', () => {
+test('Failures Matrix - All 14 FailureCodes are exhaustively mapped with exact messages & hero states', () => {
   assert.equal(ALL_14_FAILURE_CODES.length, 14);
 
   for (const code of ALL_14_FAILURE_CODES) {
@@ -34,17 +34,17 @@ test('Failures Matrix - All 14 FailureCodes are exhaustively mapped with exact m
 
     assert.equal(info.code, code);
     assert.ok(typeof info.userMessage === 'string' && info.userMessage.length > 5, `userMessage for ${code} must not be empty`);
-    assert.ok(info.pipMoodName === '嚇到' || info.pipMoodName === '老大不理人', `pipMoodName for ${code} must match spec`);
-    assert.ok(info.pipState === 'scared' || info.pipState === 'ignored', `pipState for ${code} must match spec`);
+    assert.ok(info.moodName === '嚇到' || info.moodName === '已讀不回', `moodName for ${code} must match spec`);
+    assert.ok(info.heroState === 'scared' || info.heroState === 'ignored', `heroState for ${code} must match spec`);
     assert.equal(typeof info.retryable, 'boolean');
 
-    // Timeout codes have pipMoodName '老大不理人' and pipState 'ignored'
+    // Timeout codes have moodName '已讀不回' and heroState 'ignored'
     if (code === 'TIMEOUT_IDLE' || code === 'TIMEOUT_TOTAL') {
-      assert.equal(info.pipMoodName, '老大不理人');
-      assert.equal(info.pipState, 'ignored');
+      assert.equal(info.moodName, '已讀不回');
+      assert.equal(info.heroState, 'ignored');
     } else {
-      assert.equal(info.pipMoodName, '嚇到');
-      assert.equal(info.pipState, 'scared');
+      assert.equal(info.moodName, '嚇到');
+      assert.equal(info.heroState, 'scared');
     }
   }
 });
@@ -73,24 +73,24 @@ test('Failures Matrix - Dynamic stage resolution (stageOfFailure)', () => {
   assert.equal(stageOfFailure(unsentTalk, 'INPUT_NOT_FOUND'), 'send');
 });
 
-test('Failures Matrix - pipStateOf derived states', () => {
-  assert.equal(pipStateOf(null), 'door');
+test('Failures Matrix - heroStateOf derived states', () => {
+  assert.equal(heroStateOf(null), 'door');
 
   const inFlightTalk = { phase: 'waiting' } as Talk;
-  assert.equal(pipStateOf(inFlightTalk), 'waiting');
+  assert.equal(heroStateOf(inFlightTalk), 'waiting');
 
   const doneTalk = { phase: 'done' } as Talk;
-  assert.equal(pipStateOf(doneTalk), 'boss_speaks');
+  assert.equal(heroStateOf(doneTalk), 'boss_speaks');
 
   const timeoutTalk = {
     phase: 'failed',
     failure: { code: 'TIMEOUT_IDLE' as FailureCode, stage: 'read' as const, at: 1000 }
   } as Talk;
-  assert.equal(pipStateOf(timeoutTalk), 'ignored');
+  assert.equal(heroStateOf(timeoutTalk), 'ignored');
 
   const quotaTalk = {
     phase: 'failed',
     failure: { code: 'QUOTA_EXHAUSTED' as FailureCode, stage: 'read' as const, at: 1000 }
   } as Talk;
-  assert.equal(pipStateOf(quotaTalk), 'scared');
+  assert.equal(heroStateOf(quotaTalk), 'scared');
 });

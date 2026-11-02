@@ -257,7 +257,7 @@ async function main() {
     const activeRes = activeEval.result?.value;
     assert.ok(activeRes, 'Active state evaluation failed');
     assert.equal(activeRes.inputValue, 'meticulous', 'Input must be restored with prompt text');
-    assert.ok(activeRes.moodText && activeRes.moodText.includes('Pip 正在派發話語給老大'), `Pip mood must show active dispatch state: "${activeRes.moodText}"`);
+    assert.ok(activeRes.moodText && activeRes.moodText.includes('勇者 把訊息傳給惡龍'), `hero mood must show active dispatch state: "${activeRes.moodText}"`);
     assert.equal(activeRes.containerDisplay, 'none', 'Answer container must be hidden during active phase');
     console.log('  ✓ [Live Test 1 Pass]: Active phase (resolving_tab) restored input text and active mood without showing Answer.');
 
@@ -353,7 +353,7 @@ async function main() {
     const doneRes = doneEval.result?.value;
     assert.ok(doneRes, 'Done state evaluation failed');
     assert.equal(doneRes.inputValue, 'meticulous', 'Prompt text restored in input');
-    assert.equal(doneRes.moodText, '老大回話了！', 'Pip mood updated to completion');
+    assert.equal(doneRes.moodText, '惡龍 回覆了！勇者 獲得了 知識 ×1。', 'hero mood updated to completion');
     assert.equal(doneRes.containerDisplay, 'block', 'Answer container must be displayed');
     assert.equal(doneRes.hasH3, true, 'H3 header rendered via marked GFM');
     assert.equal(doneRes.hasEm, true, 'Italic text rendered via marked GFM');

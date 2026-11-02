@@ -11,6 +11,7 @@ test('computePopupScale maps tab zoom to popup scale', () => {
 });
 
 test('computePopupScale clamps width to the 800px popup limit and falls back to 1', () => {
+  assert.equal(POPUP_BASE_WIDTH_PX * computePopupScale(2.5), 800);
   assert.ok(POPUP_BASE_WIDTH_PX * computePopupScale(5) <= POPUP_MAX_WIDTH_PX);
   assert.equal(computePopupScale(0.1), 0.5);
   assert.equal(computePopupScale(undefined), 1);

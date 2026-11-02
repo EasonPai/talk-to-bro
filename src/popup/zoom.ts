@@ -1,7 +1,7 @@
 // src/popup/zoom.ts
 // Toolbar popups do not inherit the active tab's zoom, so mirror it manually.
 
-export const POPUP_BASE_WIDTH_PX = 360;
+export const POPUP_BASE_WIDTH_PX = 400;
 export const POPUP_MAX_WIDTH_PX = 800;
 const MIN_SCALE = 0.5;
 

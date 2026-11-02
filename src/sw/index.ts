@@ -28,7 +28,8 @@ const runner = new TalkRunner({
   storageLocal: chrome.storage?.local,
   storageSession: chrome.storage?.session,
   adapter: realAdapter,
-  alarms: chrome.alarms
+  alarms: chrome.alarms,
+  fastTimers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as any) }
 });
 
 // Single entry boot

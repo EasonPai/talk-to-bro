@@ -2,45 +2,73 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Talk To Bro Personally</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="popup-container">
+    <button id="previous-card" class="previous-card" type="button" aria-expanded="false" aria-controls="previous-detail" hidden>
+      <span id="previous-label" class="previous-label"></span>
+    </button>
+    <div id="previous-detail" class="previous-detail" hidden>
+      <p id="previous-text" class="previous-text"></p>
+      <pre id="previous-answer" class="previous-answer" hidden></pre>
+    </div>
     <header class="popup-header">
-      <div class="pip-status">
-        <span class="pip-icon" id="pip-sprite">🦊</span>
-        <div class="pip-info">
-          <span class="pip-name">Pip</span>
-          <span class="pip-mood" id="pip-mood">準備替你去找老大...</span>
+      <div class="bro-status">
+        <span class="bro-avatar"><img src="assets/dragon.jpg" alt="" width="40" height="40"></span>
+        <div class="bro-info">
+          <span class="bro-name">惡龍 Bro</span>
+          <span class="bro-presence">在線上・通常 3 分鐘內回</span>
         </div>
       </div>
-      <a href="options.html" target="_blank" class="gear-btn" title="設定 Bro Chat">⚙️</a>
     </header>
 
     <main class="popup-main">
-      <div class="input-card">
+      <div class="narration">
+        <img class="narration-hero" src="assets/hero.jpg" alt="" width="40" height="40">
+        <div class="narration-box">
+          <p id="pip-mood" class="narration-text" role="status" aria-live="polite" aria-atomic="true">野生的 惡龍 Bro 出現了！勇者要怎麼做？</p>
+          <p class="narration-menu" aria-hidden="true">▶ 傳訊息</p>
+        </div>
+      </div>
+
+      <section id="chat-view" class="chat-view" hidden aria-label="傳訊狀態">
+        <div class="bubble-row">
+          <span id="chat-receipt" class="receipt" hidden>已讀 <span id="chat-sent-time"></span></span>
+          <p id="chat-bubble" class="bubble"></p>
+        </div>
+        <div id="chat-typing" class="typing" hidden aria-hidden="true"><span></span><span></span><span></span></div>
+        <div id="hud" class="hud" hidden aria-hidden="true">
+          <div class="hud-row"><span class="hud-name">耐心</span><span class="hud-bar"><span id="hud-patience-fill"></span></span><span id="hud-patience-label" class="hud-label"></span></div>
+          <div class="hud-row"><span class="hud-name">沉默</span><span class="hud-bar"><span id="hud-silence-fill"></span></span><span id="hud-silence-label" class="hud-label"></span></div>
+        </div>
+      </section>
+
+      <div class="input-card composer">
         <label for="talk-input" class="sr-only">輸入要查的單字或片語：</label>
         <textarea
           id="talk-input"
-          placeholder="輸入想查的單字 (Enter 送出，最多 300 字)..."
+          placeholder="輸入想查的單字 (最多 300 字)..."
           maxlength="300"
-          rows="3"
+          rows="2"
           autofocus
         ></textarea>
         <div class="input-meta">
           <span id="char-counter">0 / 300</span>
-          <span class="submit-hint">按 Enter 遞話給老大</span>
+          <span class="submit-hint"><kbd>Enter</kbd> 送出・<kbd>Shift</kbd>+<kbd>Enter</kbd> 換行</span>
         </div>
       </div>
 
-      <div id="answer-container" class="answer-container" style="display: none;">
+      <section id="answer-container" class="answer-container" aria-labelledby="answer-title" style="display: none;">
         <div class="answer-header">
-          <span class="answer-title">老大的回覆 (Answer)</span>
+          <img class="answer-avatar" src="assets/dragon.jpg" alt="" width="24" height="24">
+          <h1 id="answer-title" class="answer-title">惡龍的回覆 (Answer)</h1>
           <button id="copy-btn" class="copy-btn">一鍵複製</button>
         </div>
-        <div id="answer-content" class="answer-content"></div>
-      </div>
+        <div id="answer-content" class="answer-content" role="region" aria-labelledby="answer-title" tabindex="0"></div>
+      </section>
 
       <div id="error-container" class="error-container" style="display: none;">
         <div class="error-header">
@@ -48,18 +76,25 @@
           <span id="error-message" class="error-message"></span>
         </div>
         <div id="handoff-notice" class="handoff-notice" style="display: none;">
-          <span id="countdown-text" class="countdown-text">Pip 帶你去找老大… (1.5s)</span>
+          <span id="countdown-text" class="countdown-text">勇者帶你去找惡龍… (1.5s)</span>
           <button id="cancel-handoff-btn" class="cancel-btn">留在這裡</button>
         </div>
         <div id="deferred-notice" class="deferred-notice" style="display: none;">
-          <button id="goto-bro-btn" class="goto-bro-btn" autofocus>去找老大 ⏎</button>
+          <button id="goto-bro-btn" class="goto-bro-btn" autofocus>去找惡龍 ⏎</button>
         </div>
       </div>
     </main>
 
     <footer class="popup-footer">
+      <span id="source-line" class="source-line" hidden>SOURCE: TRUST ME BRO</span>
       <span>快捷鍵: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></span>
     </footer>
+    <a href="options.html" target="_blank" class="gear-btn" title="設定 Bro Chat" aria-label="設定 Bro Chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="m9 3-.6 2.4-2.1 1.2L4 6l-3 5 1.8 1.8v2.4L1 17l3 5 2.3-.6 2.1 1.2L9 25h6l.6-2.4 2.1-1.2 2.3.6 3-5-1.8-1.8v-2.4L23 11l-3-5-2.3.6-2.1-1.2L15 3Z" transform="translate(2 0) scale(.83)"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+    </a>
   </div>
   <script type="module" src="popup.js"></script>
 </body>

@@ -2,8 +2,8 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Talk } from '../shared/types.ts';
-import { getFailureInfo } from '../shared/failures.ts';
 import { followActiveTabZoom } from './zoom.ts';
+import { sendViewOf, hudOf, formatSentTime, failureViewOf, previousSummaryOf, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, type PreviousSummary } from './view-state.ts';
 
 // Configure marked with GFM support
 marked.setOptions({
@@ -12,7 +12,52 @@ marked.setOptions({
 });
 
 let currentLastTalk: Talk | null = null;
+// Whether the previous render showed an in-flight Talk; lets this popup see busy-to-terminal once.
+let wasBusy = false;
+// T5: lives only in this popup document; never written to storage.
+let previousSummary: PreviousSummary | null = null;
 let countdownInterval: any = null;
+let hudInterval: any = null;
+
+function clearHudTimer() {
+  if (hudInterval) {
+    clearInterval(hudInterval);
+    hudInterval = null;
+  }
+}
+
+function setHidden(id: string, hidden: boolean) {
+  const el = document.getElementById(id);
+  if (el) el.hidden = hidden;
+}
+
+/** Display-only: bubble, 已讀, typing dots and HUD for states 2a/2b. */
+function paintSendView(talk: Talk | null, now: number) {
+  const view = sendViewOf(talk);
+  setHidden('chat-view', view.kind === 'none');
+  if (view.kind === 'none' || !talk) return;
+  const bubble = document.getElementById('chat-bubble');
+  if (bubble) bubble.textContent = talk.text;
+  setHidden('chat-receipt', !view.readReceipt);
+  const sent = document.getElementById('chat-sent-time');
+  if (sent) sent.textContent = view.sentAt === null ? '' : formatSentTime(view.sentAt);
+  setHidden('chat-typing', !view.typing);
+  const hud = hudOf(talk, now);
+  setHidden('hud', hud === null);
+  if (hud) {
+    for (const [key, m] of [['patience', hud.patience], ['silence', hud.silence]] as const) {
+      const fill = document.getElementById(`hud-${key}-fill`);
+      if (fill) fill.style.width = `${Math.round(m.ratio * 100)}%`;
+      const label = document.getElementById(`hud-${key}-label`);
+      if (label) label.textContent = m.label;
+    }
+  }
+}
+
+function startHudTimer(talk: Talk) {
+  clearHudTimer();
+  hudInterval = setInterval(() => paintSendView(talk, Date.now()), 1000);
+}
 
 /**
  * Cancels any active handoff countdown timer.
@@ -38,7 +83,7 @@ function startHandoffCountdown(talk: Talk) {
   handoffNotice.style.display = 'flex';
 
   let remainingMs = 1500;
-  countdownText.textContent = `Pip 帶你去找老大… (${(remainingMs / 1000).toFixed(1)}s)`;
+  countdownText.textContent = `勇者帶你去找惡龍… (${(remainingMs / 1000).toFixed(1)}s)`;
 
   if (cancelBtn) {
     cancelBtn.onclick = () => {
@@ -57,7 +102,7 @@ function startHandoffCountdown(talk: Talk) {
     remainingMs -= 100;
     if (remainingMs <= 0) {
       clearCountdown();
-      countdownText.textContent = '正在切換至老大分頁…';
+      countdownText.textContent = '正在切換至惡龍分頁…';
 
       // 1. Copy Talk text using navigator.clipboard
       let copiedOk = false;
@@ -76,9 +121,57 @@ function startHandoffCountdown(talk: Talk) {
         alreadyCopied: copiedOk
       });
     } else {
-      countdownText.textContent = `Pip 帶你去找老大… (${(remainingMs / 1000).toFixed(1)}s)`;
+      countdownText.textContent = `勇者帶你去找惡龍… (${(remainingMs / 1000).toFixed(1)}s)`;
     }
   }, 100);
+}
+
+let fitTimer: any = null;
+// The browser may cap the popup below 600px (small window or screen). When the container is still taller than the settled viewport,
+// cap it to the viewport so the chat area scrolls internally instead of the document.
+function scheduleFit() {
+  const box = document.querySelector('.popup-container') as HTMLElement | null;
+  if (!box) return;
+  box.style.removeProperty('--ttb-max-h');
+  delete box.dataset.capped;
+  clearTimeout(fitTimer);
+  fitTimer = setTimeout(() => {
+    const zoom = parseFloat(document.documentElement.style.getPropertyValue('--ttb-zoom')) || 1;
+    if (box.getBoundingClientRect().height > window.innerHeight + 1) {
+      box.style.setProperty('--ttb-max-h', `${window.innerHeight / zoom}px`);
+      box.dataset.capped = 'true';
+    }
+  }, 250);
+}
+
+function paintPreviousCard(expanded: boolean) {
+  const card = document.getElementById('previous-card');
+  const detail = document.getElementById('previous-detail');
+  if (!card || !detail) return;
+  if (!previousSummary) {
+    card.hidden = true;
+    detail.hidden = true;
+    card.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  const label = document.getElementById('previous-label');
+  if (label) label.textContent = `📖 冒險之書・上一則 ${formatSentTime(previousSummary.at)}「${previousSummary.text}」`;
+  const text = document.getElementById('previous-text');
+  if (text) text.textContent = previousSummary.text;
+  const answer = document.getElementById('previous-answer');
+  if (answer) {
+    answer.textContent = previousSummary.answerLines?.join('\n') ?? '';
+    answer.hidden = !previousSummary.answerLines;
+  }
+  card.hidden = false;
+  detail.hidden = !expanded;
+  card.setAttribute('aria-expanded', String(expanded));
+  scheduleFit();
+}
+
+export function submitPreviousSummary(prev: Talk | null) {
+  previousSummary = previousSummaryOf(prev);
+  paintPreviousCard(false);
 }
 
 /**
@@ -86,12 +179,17 @@ function startHandoffCountdown(talk: Talk) {
  */
 export function renderTalkState(talk: Talk | null) {
   currentLastTalk = talk;
+  scheduleFit();
+  const phase = talk?.phase ?? 'idle';
+  document.body.dataset.phase = phase;
+  const busy = phase !== 'idle' && phase !== 'done' && phase !== 'failed';
+  document.body.dataset.busy = String(busy);
 
   const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
   const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
   const pipMood = document.getElementById('pip-mood') as HTMLSpanElement | null;
-  const pipSprite = document.getElementById('pip-sprite') as HTMLSpanElement | null;
   const answerContainer = document.getElementById('answer-container') as HTMLDivElement | null;
+  answerContainer?.setAttribute('aria-busy', String(busy));
   const answerContent = document.getElementById('answer-content') as HTMLDivElement | null;
   const errorContainer = document.getElementById('error-container') as HTMLDivElement | null;
   const errorBadge = document.getElementById('error-badge') as HTMLSpanElement | null;
@@ -100,21 +198,34 @@ export function renderTalkState(talk: Talk | null) {
   const deferredNotice = document.getElementById('deferred-notice') as HTMLDivElement | null;
   const gotoBroBtn = document.getElementById('goto-bro-btn') as HTMLButtonElement | null;
 
+  // readOnly (not disabled) keeps the field in the Tab order and readable by screen readers.
+  if (input) {
+    input.readOnly = busy;
+    if (busy) input.setAttribute('aria-disabled', 'true');
+    else input.removeAttribute('aria-disabled');
+  }
+
   clearCountdown();
+  clearHudTimer();
+  setHidden('source-line', phase !== 'done');
+  paintSendView(talk, Date.now());
+  if (sendViewOf(talk).kind === 'reading' && talk) startHudTimer(talk);
 
   if (!talk) {
-    if (pipMood) pipMood.textContent = '準備替你去找老大...';
-    if (pipSprite) pipSprite.textContent = '🦊';
+    wasBusy = false;
+    if (pipMood) pipMood.textContent = '野生的 惡龍 Bro 出現了！勇者要怎麼做？';
     if (answerContainer) answerContainer.style.display = 'none';
     if (errorContainer) errorContainer.style.display = 'none';
     return;
   }
 
-  // Restore input text and character counter
-  if (input && talk.text) {
-    input.value = talk.text;
+  const draft = draftActionOf(wasBusy, talk);
+  if (input && shouldFocusInput(wasBusy, talk)) input.focus();
+  wasBusy = busy;
+  if (input && draft !== 'keep') {
+    input.value = draft === 'show_talk_text' ? talk.text : '';
     if (counter) {
-      counter.textContent = `${talk.text.length} / 300`;
+      counter.textContent = `${input.value.length} / 300`;
     }
   }
 
@@ -130,23 +241,19 @@ export function renderTalkState(talk: Talk | null) {
     case 'resolving_tab':
     case 'sending':
     case 'submitting':
-      if (pipMood) pipMood.textContent = 'Pip 正在派發話語給老大...';
-      if (pipSprite) pipSprite.textContent = '🦊';
+      if (pipMood) pipMood.textContent = sendViewOf(talk).narration;
       break;
 
     case 'waiting':
-      if (pipMood) pipMood.textContent = '老大正在思考中...';
-      if (pipSprite) pipSprite.textContent = '⏳';
+      if (pipMood) pipMood.textContent = sendViewOf(talk).narration;
       break;
 
     case 'extracting':
-      if (pipMood) pipMood.textContent = '正在擷取老大的回覆...';
-      if (pipSprite) pipSprite.textContent = '📝';
+      if (pipMood) pipMood.textContent = sendViewOf(talk).narration;
       break;
 
     case 'done':
-      if (pipMood) pipMood.textContent = '老大回話了！';
-      if (pipSprite) pipSprite.textContent = '✨';
+      if (pipMood) pipMood.textContent = '惡龍 回覆了！勇者 獲得了 知識 ×1。';
 
       if (talk.answerMarkdown && answerContent && answerContainer) {
         const dirtyHtml = marked.parse(talk.answerMarkdown) as string;
@@ -163,20 +270,20 @@ export function renderTalkState(talk: Talk | null) {
           a.setAttribute('rel', 'noopener noreferrer');
         });
 
-        answerContainer.style.display = 'block';
+        answerContainer.style.display = 'flex';
       }
       break;
 
     case 'failed': {
       const code = talk.failure?.code || 'INTERNAL';
-      const info = getFailureInfo(code);
 
-      if (pipMood) pipMood.textContent = info.userMessage;
-      if (pipSprite) pipSprite.textContent = info.pipState === 'ignored' ? '💤' : '🙀';
+      const failureView = failureViewOf(code, talk.handoff);
+
+      if (pipMood) pipMood.textContent = failureView.narration;
 
       if (errorContainer) errorContainer.style.display = 'block';
-      if (errorBadge) errorBadge.textContent = info.pipMoodName;
-      if (errorMessage) errorMessage.textContent = info.userMessage;
+      if (errorBadge) errorBadge.textContent = failureView.badge;
+      if (errorMessage) errorMessage.textContent = failureView.userMessage;
 
       // Handle Handoff display logic
       if (talk.handoff?.status === 'deferred') {
@@ -215,11 +322,7 @@ export function renderTalkState(talk: Talk | null) {
           handoffNotice.style.display = 'flex';
           const countdownText = document.getElementById('countdown-text');
           if (countdownText) {
-            if (talk.handoff.copied) {
-              countdownText.textContent = 'Talk 內容已複製至剪貼簿。';
-            } else {
-              countdownText.textContent = '已切換至老大分頁（剪貼簿未寫入，內容保留在輸入框）。';
-            }
+            countdownText.textContent = failureView.handoffLine;
           }
           const cancelBtn = document.getElementById('cancel-handoff-btn');
           if (cancelBtn) cancelBtn.style.display = 'none';
@@ -269,17 +372,29 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
           e.preventDefault();
 
+          if (isTalkBusy(currentLastTalk)) return;
           const rawText = input.value;
           if (rawText.trim().length === 0) return;
 
+          const prevTalk = currentLastTalk;
           chrome.runtime.sendMessage({ action: 'talk/submit', text: rawText }, (res) => {
-            if (res && res.talk) {
-              renderTalkState(res.talk);
+            const outcome = submitOutcomeOf(res);
+            if (outcome.kind === 'accepted') {
+              submitPreviousSummary(prevTalk);
+              renderTalkState(outcome.talk);
+            } else if (outcome.kind === 'busy') {
+              const status = document.getElementById('pip-mood');
+              if (status) status.textContent = outcome.message;
             }
           });
         }
       });
     }
+
+    const previousCard = document.getElementById('previous-card');
+    previousCard?.addEventListener('click', () => {
+      paintPreviousCard(previousCard.getAttribute('aria-expanded') !== 'true');
+    });
 
     if (copyBtn) {
       copyBtn.addEventListener('click', async () => {
@@ -306,6 +421,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const runtime = res['runtime:v1'];
       renderTalkState(runtime?.lastTalk || null);
 
+      window.addEventListener('pagehide', clearHudTimer);
+
       // Listen for runtime updates
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes['runtime:v1']) {
@@ -316,7 +433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (err: any) {
     console.error('[Popup] Top-level initialization error boundary caught:', err);
     const pipMood = document.getElementById('pip-mood');
-    if (pipMood) pipMood.textContent = 'Pip 暫時無法讀取狀態，但你仍可在此打字。';
+    if (pipMood) pipMood.textContent = '勇者暫時無法讀取狀態，但你仍可在此打字。';
     const errorContainer = document.getElementById('error-container');
     if (errorContainer) {
       errorContainer.style.display = 'block';

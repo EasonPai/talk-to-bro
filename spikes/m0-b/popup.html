@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>Talk To Bro Personally</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <div class="pip-status">
+        <span class="pip-icon" id="pip-sprite">🦊</span>
+        <div class="pip-info">
+          <span class="pip-name">Pip</span>
+          <span class="pip-mood" id="pip-mood">準備替你去找老大...</span>
+        </div>
+      </div>
+      <a href="options.html" target="_blank" class="gear-btn" title="設定 Bro Chat">⚙️</a>
+    </header>
+
+    <main class="popup-main">
+      <div class="input-card">
+        <label for="talk-input" class="sr-only">輸入要查的單字或片語：</label>
+        <textarea
+          id="talk-input"
+          placeholder="輸入想查的單字 (Enter 送出，最多 300 字)..."
+          maxlength="300"
+          rows="3"
+          autofocus
+        ></textarea>
+        <div class="input-meta">
+          <span id="char-counter">0 / 300</span>
+          <span class="submit-hint">按 Enter 遞話給老大</span>
+        </div>
+      </div>
+
+      <div id="answer-container" class="answer-container" style="display: none;">
+        <div class="answer-header">
+          <span class="answer-title">老大的回覆 (Answer)</span>
+          <button id="copy-btn" class="copy-btn">一鍵複製</button>
+        </div>
+        <div id="answer-content" class="answer-content"></div>
+      </div>
+
+      <div id="error-container" class="error-container" style="display: none;">
+        <div class="error-header">
+          <span class="error-badge" id="error-badge">嚇到</span>
+          <span id="error-message" class="error-message"></span>
+        </div>
+        <div id="handoff-notice" class="handoff-notice" style="display: none;">
+          <span id="countdown-text" class="countdown-text">Pip 帶你去找老大… (1.5s)</span>
+          <button id="cancel-handoff-btn" class="cancel-btn">留在這裡</button>
+        </div>
+        <div id="deferred-notice" class="deferred-notice" style="display: none;">
+          <button id="goto-bro-btn" class="goto-bro-btn" autofocus>去找老大 ⏎</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="popup-footer">
+      <span>快捷鍵: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></span>
+    </footer>
+  </div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

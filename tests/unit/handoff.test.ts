@@ -183,7 +183,7 @@ test('Handoff - Popup closed execution: Offscreen copy, tab switch & shadow DOM 
   assert.equal(res.focused, true);
   assert.equal(tabActivated, true, 'Bro Chat tab must be activated');
   assert.equal(windowFocused, true, 'Browser window must be focused');
-  assert.ok(noticeMessage.includes('老大 30 秒沒出聲。'), 'Notice must contain exact FailureCode user message');
+  assert.ok(noticeMessage.includes('惡龍 30 秒沒出聲。'), 'Notice must contain exact FailureCode user message');
   assert.ok(noticeMessage.includes('Talk 已複製'), 'Notice must confirm Talk text was copied');
 
   // Verify storage updated atomically

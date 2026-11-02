@@ -34,7 +34,15 @@ export interface AlarmsLike {
   clear(name: string): Promise<boolean> | boolean;
 }
 
+export const FAST_PROBE_MS = 2000;
+
+export interface FastTimersLike {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
 export interface RunnerDeps {
+  fastTimers?: FastTimersLike;
   storageLocal: StorageAreaLike;
   storageSession?: StorageAreaLike;
   adapter: BroAdapter;
@@ -67,9 +75,13 @@ export class TalkRunner {
   private runtimeApi?: any;
   private offscreenApi?: any;
   private mutex = new SerializedMutex();
-  private consecutiveDone = 0;
+  private fastTimers?: FastTimersLike;
+  private fastHandle: unknown = null;
+  private fastTalkId: string | null = null;
+  private tickInFlight = false;
 
   constructor(deps: RunnerDeps) {
+    this.fastTimers = deps.fastTimers;
     this.storageLocal = deps.storageLocal;
     this.storageSession = deps.storageSession;
     this.adapter = deps.adapter;
@@ -166,7 +178,6 @@ export class TalkRunner {
       let talk = createTalk(text, now);
       await writeAheadTalk(this.storageLocal, talk);
       this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
-      this.consecutiveDone = 0;
       return { accepted: true, talk };
     });
 
@@ -261,10 +272,50 @@ export class TalkRunner {
       return talk;
     });
 
+    await this.syncFastProbe();
     return { accepted: true, talk: confirmedTalk ?? undefined };
   }
 
-  async tick(): Promise<Talk | null> {
+  private stopFastProbe(): void {
+    if (this.fastHandle !== null) this.fastTimers?.clearTimeout(this.fastHandle);
+    this.fastHandle = null;
+    this.fastTalkId = null;
+  }
+
+  // Idempotent: the fast loop runs exactly while lastTalk is `waiting`, bound to that Talk id.
+  private async syncFastProbe(): Promise<void> {
+    if (!this.fastTimers) return;
+    const talk = (await getRuntimeStorage(this.storageLocal)).lastTalk;
+    if (!talk || talk.phase !== 'waiting') {
+      this.stopFastProbe();
+      return;
+    }
+    if (this.fastHandle !== null && this.fastTalkId === talk.id) return;
+    this.stopFastProbe();
+    const talkId = talk.id;
+    this.fastTalkId = talkId;
+    this.fastHandle = this.fastTimers.setTimeout(() => {
+      this.fastHandle = null;
+      this.tick(talkId)
+        .catch((err) => console.warn('[TalkRunner] Fast probe error:', err))
+        .then(() => this.syncFastProbe())
+        .catch(() => {});
+    }, FAST_PROBE_MS);
+  }
+
+  // Single-flight: a tick that starts while another runs is skipped (alarm and fast path share this).
+  async tick(expectedTalkId?: string): Promise<Talk | null> {
+    if (this.tickInFlight) return null;
+    this.tickInFlight = true;
+    try {
+      return await this.tickOnce(expectedTalkId);
+    } finally {
+      this.tickInFlight = false;
+      await this.syncFastProbe();
+    }
+  }
+
+  private async tickOnce(expectedTalkId?: string): Promise<Talk | null> {
     // 0. Check debug:v1.forceFailure during tick
     const debugData = (await this.storageLocal.get('debug:v1'))?.['debug:v1'] as DebugV1Storage | undefined;
     if (debugData?.forceFailure) {
@@ -285,6 +336,7 @@ export class TalkRunner {
       const runtime = await getRuntimeStorage(this.storageLocal);
       let talk = runtime.lastTalk;
       if (!talk || talk.phase === 'done' || talk.phase === 'failed') return null;
+      if (expectedTalkId !== undefined && talk.id !== expectedTalkId) return null;
 
       // Absolute total timeout enforcement for waiting phase BEFORE awaiting probe
       if (talk.phase === 'waiting') {
@@ -358,8 +410,11 @@ export class TalkRunner {
       let talk = runtime.lastTalk;
       if (!talk || talk.id !== talkToProcess.id || talk.phase !== 'waiting') return { action: 'noop' as const, talk };
 
-      const evalResult = evaluateTick(talk, probe, now, this.consecutiveDone);
-      this.consecutiveDone = evalResult.nextConsecutiveDone;
+      const evalResult = evaluateTick(talk, probe, now, talk.doneStreak ?? 0);
+      const streakChanged = (talk.doneStreak ?? 0) !== evalResult.nextConsecutiveDone;
+      if (streakChanged) {
+        talk = { ...talk, doneStreak: evalResult.nextConsecutiveDone };
+      }
 
       if (evalResult.growth && evalResult.newLength !== undefined && evalResult.newSig !== undefined) {
         talk = transition(
@@ -372,6 +427,8 @@ export class TalkRunner {
           },
           now
         );
+        await writeAheadTalk(this.storageLocal, talk);
+      } else if (streakChanged) {
         await writeAheadTalk(this.storageLocal, talk);
       }
 
@@ -613,6 +670,7 @@ export class TalkRunner {
       this.alarms?.create('ttb-watchdog', { periodInMinutes: 0.5 });
     }
 
+    await this.syncFastProbe();
     return decision;
   }
 }

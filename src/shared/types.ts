@@ -52,6 +52,7 @@ export interface Talk {
   lastGrowthAt?: number;          // Timestamp when response text growth was last seen
   lastSig?: string;               // Text signature: length + FNV-1a hash
   streamedChars?: number;         // Character count for Pip progress display
+  doneStreak?: number;            // Consecutive stable complete probes; absent reads as 0
   tabId?: number;                 // Active Gemini tab ID
   answerMarkdown?: string;        // Extracted Markdown answer
   failure?: TalkFailure;          // Populated when phase === 'failed'

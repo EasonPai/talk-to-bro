@@ -717,3 +717,223 @@ test('Talk Runner - Real boot restart marks unfinished Talk as INTERRUPTED with 
   assert.equal(talk?.handoff?.copied, false);
   assert.equal(talk?.handoff?.focused, false);
 });
+
+// ---- #48 fast completion detection ----
+
+class FakeFastTimers {
+  pending = new Map<number, () => void>();
+  private nextId = 1;
+  setTimeout(fn: () => void, _ms: number) {
+    const id = this.nextId++;
+    this.pending.set(id, fn);
+    return id;
+  }
+  clearTimeout(h: unknown) {
+    this.pending.delete(h as number);
+  }
+  fireAll() {
+    const fns = [...this.pending.values()];
+    this.pending.clear();
+    fns.forEach((fn) => fn());
+  }
+}
+
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+};
+
+const STABLE: ProbeResult = {
+  page: 'ready',
+  turn: 'complete',
+  generating: false,
+  textLength: 80,
+  textSig: computeTextSignature('stable answer'),
+  quota: false
+};
+
+async function createFastHarness() {
+  const h = createHarness();
+  const timers = new FakeFastTimers();
+  const runner = new TalkRunner({
+    storageLocal: h.storageLocal,
+    storageSession: h.storageSession,
+    adapter: h.adapter,
+    alarms: h.alarms,
+    clock: () => h.getTime(),
+    fastTimers: timers
+  });
+  await saveSettingsStorage(h.storageLocal, {
+    broChatUrl: 'https://gemini.google.com/app/4d870f290f0c5975',
+    updatedAt: h.getTime()
+  });
+  h.adapter.defaultProbe = STABLE;
+  const lastTalk = async () => (await getRuntimeStorage(h.storageLocal)).lastTalk;
+  return { ...h, runner, timers, lastTalk };
+}
+
+function deferProbe(adapter: FakeAdapter) {
+  let release!: (p: ProbeResult) => void;
+  adapter.probe = async () => {
+    adapter.probeCalls++;
+    return new Promise<ProbeResult>((r) => { release = r; });
+  };
+  return (p: ProbeResult) => release(p);
+}
+
+test('L-1: fast path completes a stable answer within 4 s with no alarm tick', async () => {
+  const h = await createFastHarness();
+  const t0 = h.getTime();
+  await h.runner.submit('q');
+  assert.equal(h.timers.pending.size, 1);
+
+  h.advanceTime(2000);
+  h.timers.fireAll();
+  await flush();
+  assert.equal((await h.lastTalk())?.phase, 'waiting');
+  assert.equal(h.timers.pending.size, 1, 'chained timer rescheduled');
+
+  h.advanceTime(2000);
+  h.timers.fireAll();
+  await flush();
+  const talk = await h.lastTalk();
+  assert.equal(talk?.phase, 'done');
+  assert.ok(h.getTime() - t0 <= 4000);
+  assert.equal(h.adapter.extractCalls, 1);
+  assert.equal(h.timers.pending.size, 0, 'no fast probe after terminal');
+});
+
+test('L-3: restart reconciles a persisted waiting Talk and completes using stored doneStreak', async () => {
+  const h = await createFastHarness();
+  await h.runner.submit('q');
+  h.advanceTime(2000);
+  h.timers.fireAll();
+  await flush();
+  assert.equal((await h.lastTalk())?.doneStreak, 1);
+
+  const timers2 = new FakeFastTimers();
+  const runner2 = new TalkRunner({
+    storageLocal: h.storageLocal,
+    storageSession: h.storageSession,
+    adapter: h.adapter,
+    alarms: h.alarms,
+    clock: () => h.getTime(),
+    fastTimers: timers2
+  });
+  await saveSessionStorage(h.storageSession, { bootId: 'same-browser-session' });
+  await runner2.reconcile(false);
+  assert.equal(timers2.pending.size, 1, 'fast path restarted at boot');
+
+  h.advanceTime(2000);
+  timers2.fireAll();
+  await flush();
+  assert.equal((await h.lastTalk())?.phase, 'done');
+});
+
+test('L-4: no fast probe once the Talk leaves waiting or is replaced', async () => {
+  const h = await createFastHarness();
+  await h.runner.submit('q');
+  const talk = (await h.lastTalk())!;
+
+  await saveRuntimeStorageForTest(h, { ...talk, phase: 'failed', phaseDeadlineAt: null });
+  h.timers.fireAll();
+  await flush();
+  assert.equal(h.adapter.probeCalls, 0, 'terminal Talk is not probed');
+  assert.equal(h.timers.pending.size, 0);
+
+  const h2 = await createFastHarness();
+  await h2.runner.submit('q');
+  const old = (await h2.lastTalk())!;
+  await saveRuntimeStorageForTest(h2, { ...old, id: 'other-talk' });
+  h2.timers.fireAll();
+  await flush();
+  assert.equal(h2.adapter.probeCalls, 0, 'old Talk id is not probed after replacement');
+});
+
+test('L-5: alarm tick during a fast tick is skipped, and the reverse; one extract', async () => {
+  const h = await createFastHarness();
+  await h.runner.submit('q');
+  h.advanceTime(2000);
+  h.timers.fireAll();
+  await flush();
+  assert.equal((await h.lastTalk())?.doneStreak, 1);
+
+  const release = deferProbe(h.adapter);
+  h.advanceTime(2000);
+  h.timers.fireAll();
+  await flush();
+  assert.equal(await h.runner.tick(), null, 'alarm tick skipped while fast tick runs');
+  assert.equal(h.adapter.probeCalls, 2);
+  release(STABLE);
+  await flush();
+  assert.equal((await h.lastTalk())?.phase, 'done');
+  assert.equal(h.adapter.extractCalls, 1);
+
+  const h2 = await createFastHarness();
+  await h2.runner.submit('q');
+  const release2 = deferProbe(h2.adapter);
+  const alarmTick = h2.runner.tick();
+  await flush();
+  h2.timers.fireAll();
+  await flush();
+  assert.equal(h2.adapter.probeCalls, 1, 'fast tick skipped while alarm tick runs');
+  release2(STABLE);
+  await alarmTick;
+  assert.equal(h2.timers.pending.size, 1, 'loop survives a skipped fast tick');
+});
+
+test('L-5b: a probe returning after the Talk was replaced or cancelled changes nothing', async () => {
+  for (const mode of ['replaced', 'cancelled'] as const) {
+    const h = await createFastHarness();
+    await h.runner.submit('q');
+    h.advanceTime(2000);
+    h.timers.fireAll();
+    await flush();
+
+    const release = deferProbe(h.adapter);
+    h.advanceTime(2000);
+    h.timers.fireAll();
+    await flush();
+    const old = (await h.lastTalk())!;
+    const next =
+      mode === 'replaced'
+        ? { ...old, id: 'new-talk', doneStreak: 0 }
+        : { ...old, phase: 'failed' as const, phaseDeadlineAt: null };
+    await saveRuntimeStorageForTest(h, next);
+    release(STABLE);
+    await flush();
+    assert.deepEqual(await h.lastTalk(), next, mode);
+    assert.equal(h.adapter.extractCalls, 0, mode);
+  }
+});
+
+test('L-5c: doneStreak resets on growth/incomplete/generating and starts at 0 for a new Talk', async () => {
+  const h = await createFastHarness();
+  await h.runner.submit('q');
+  assert.equal((await h.lastTalk())?.doneStreak ?? 0, 0);
+
+  await h.runner.tick();
+  assert.equal((await h.lastTalk())?.doneStreak, 1);
+
+  h.adapter.defaultProbe = { ...STABLE, turn: 'streaming', generating: true, textLength: 120, textSig: computeTextSignature('grown') };
+  await h.runner.tick();
+  assert.equal((await h.lastTalk())?.doneStreak, 0, 'growth + generating resets');
+
+  h.adapter.defaultProbe = { ...STABLE, textLength: 120, textSig: computeTextSignature('grown') };
+  await h.runner.tick();
+  assert.equal((await h.lastTalk())?.doneStreak, 1);
+  h.adapter.defaultProbe = { ...STABLE, turn: 'streaming', generating: false, textLength: 120, textSig: computeTextSignature('grown') };
+  await h.runner.tick();
+  assert.equal((await h.lastTalk())?.doneStreak, 0, 'incomplete resets');
+
+  h.adapter.defaultProbe = { ...STABLE, textLength: 120, textSig: computeTextSignature('grown') };
+  await h.runner.tick();
+  await h.runner.tick();
+  assert.equal((await h.lastTalk())?.phase, 'done');
+  await h.runner.submit('next');
+  assert.equal((await h.lastTalk())?.doneStreak ?? 0, 0, 'new Talk starts at 0');
+});
+
+async function saveRuntimeStorageForTest(h: { storageLocal: unknown }, lastTalk: unknown) {
+  const runtime = await getRuntimeStorage(h.storageLocal as any);
+  await (h.storageLocal as any).set({ 'runtime:v1': { ...runtime, lastTalk } });
+}

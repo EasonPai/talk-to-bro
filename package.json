@@ -13,7 +13,8 @@
     "verify": "node scripts/test-m1-suite.js",
     "verify:m3": "node scripts/test-m3-suite.js",
     "verify:m4": "node scripts/test-m4-suite.js",
-    "verify:m5": "node scripts/test-m5-suite.js"
+    "verify:m5": "node scripts/test-m5-suite.js",
+    "verify:popup-shell": "node scripts/verify-popup-shell.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.306",
