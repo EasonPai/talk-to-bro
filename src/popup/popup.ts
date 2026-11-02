@@ -2,7 +2,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Talk } from '../shared/types.ts';
-import { followActiveTabZoom } from './zoom.ts';
+import { followActiveTabZoom, applyPopupLayout } from './zoom.ts';
 import { sendViewOf, hudOf, formatSentTime, failureViewOf, previousSummaryOf, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, type PreviousSummary } from './view-state.ts';
 
 // Configure marked with GFM support
@@ -11,6 +11,23 @@ marked.setOptions({
   breaks: true
 });
 
+function sanitizeHtml(dirtyHtml: string): string {
+  try {
+    if (typeof (DOMPurify as any)?.sanitize === 'function') {
+      return (DOMPurify as any).sanitize(dirtyHtml, { ADD_ATTR: ['target', 'rel'] });
+    }
+    if (typeof DOMPurify === 'function' && typeof window !== 'undefined') {
+      const instance = (DOMPurify as any)(window);
+      if (typeof instance?.sanitize === 'function') {
+        return instance.sanitize(dirtyHtml, { ADD_ATTR: ['target', 'rel'] });
+      }
+    }
+  } catch {
+    // Fallback for non-browser/stub test environments
+  }
+  return dirtyHtml;
+}
+
 let currentLastTalk: Talk | null = null;
 // Whether the previous render showed an in-flight Talk; lets this popup see busy-to-terminal once.
 let wasBusy = false;
@@ -18,6 +35,102 @@ let wasBusy = false;
 let previousSummary: PreviousSummary | null = null;
 let countdownInterval: any = null;
 let hudInterval: any = null;
+
+// Local reading mode state (T-popover-reading)
+let readingMode = false;
+
+export function getReadingMode(): boolean {
+  return readingMode;
+}
+
+export function setReadingMode(mode: boolean): void {
+  readingMode = mode;
+  updateReadingModeUI();
+}
+
+export interface ScrollAnchor {
+  index: number;
+  ratio: number;
+}
+
+export function captureScrollAnchor(): ScrollAnchor | null {
+  const answerContent = document.getElementById('answer-content');
+  if (!answerContent || !answerContent.children.length) return null;
+  const isReading = readingMode;
+  const scroller = isReading ? answerContent : (document.querySelector('.popup-main') as HTMLElement);
+  if (!scroller) return null;
+
+  const scrollerTop = scroller.getBoundingClientRect().top;
+  const children = Array.from(answerContent.children) as HTMLElement[];
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const rect = child.getBoundingClientRect();
+    if (rect.bottom > scrollerTop + 2) {
+      const offset = scrollerTop - rect.top;
+      const ratio = rect.height > 0 ? Math.max(0, Math.min(1, offset / rect.height)) : 0;
+      return { index: i, ratio };
+    }
+  }
+  return { index: 0, ratio: 0 };
+}
+
+export function restoreScrollAnchor(anchor: ScrollAnchor | null) {
+  if (!anchor || typeof document === 'undefined') return;
+  const answerContent = document.getElementById('answer-content');
+  if (!answerContent || !answerContent.children.length) return;
+  const isReading = readingMode;
+  const scroller = isReading ? answerContent : (document.querySelector('.popup-main') as HTMLElement);
+  if (!scroller) return;
+
+  const children = Array.from(answerContent.children) as HTMLElement[];
+  const idx = Math.max(0, Math.min(anchor.index, children.length - 1));
+  const target = children[idx];
+  if (!target) return;
+
+  const applyScroll = () => {
+    if (typeof document === 'undefined') return;
+    if (isReading) {
+      scroller.scrollTop = target.offsetTop + (anchor.ratio * target.offsetHeight);
+    } else {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const diff = targetRect.top - scrollerRect.top;
+      scroller.scrollTop += (diff + (anchor.ratio * target.offsetHeight));
+    }
+  };
+
+  applyScroll();
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(applyScroll);
+  }
+}
+
+export function updateReadingModeUI() {
+  if (typeof document === 'undefined') return;
+  const toggleBtn = document.getElementById('reading-toggle-btn') as HTMLButtonElement | null;
+  const canRead = currentLastTalk?.phase === 'done' && !!currentLastTalk?.answerMarkdown;
+
+  if (toggleBtn) {
+    toggleBtn.style.display = canRead ? 'inline-block' : 'none';
+    toggleBtn.setAttribute('aria-expanded', String(readingMode && canRead));
+    toggleBtn.textContent = (readingMode && canRead) ? '收起' : '展開閱讀';
+  }
+
+  if (document.documentElement) {
+    applyPopupLayout(document.documentElement, readingMode && canRead);
+  }
+  scheduleFit();
+}
+
+export function toggleReadingMode(): void {
+  if (!currentLastTalk || currentLastTalk.phase !== 'done' || !currentLastTalk.answerMarkdown) return;
+  const anchor = captureScrollAnchor();
+  readingMode = !readingMode;
+  updateReadingModeUI();
+  restoreScrollAnchor(anchor);
+  const toggleBtn = document.getElementById('reading-toggle-btn');
+  toggleBtn?.focus();
+}
 
 function clearHudTimer() {
   if (hudInterval) {
@@ -130,12 +243,14 @@ let fitTimer: any = null;
 // The browser may cap the popup below 600px (small window or screen). When the container is still taller than the settled viewport,
 // cap it to the viewport so the chat area scrolls internally instead of the document.
 function scheduleFit() {
+  if (typeof document === 'undefined') return;
   const box = document.querySelector('.popup-container') as HTMLElement | null;
   if (!box) return;
   box.style.removeProperty('--ttb-max-h');
   delete box.dataset.capped;
   clearTimeout(fitTimer);
   fitTimer = setTimeout(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
     const zoom = parseFloat(document.documentElement.style.getPropertyValue('--ttb-zoom')) || 1;
     if (box.getBoundingClientRect().height > window.innerHeight + 1) {
       box.style.setProperty('--ttb-max-h', `${window.innerHeight / zoom}px`);
@@ -178,6 +293,11 @@ export function submitPreviousSummary(prev: Talk | null) {
  * Renders the state of the last talk into the popup UI.
  */
 export function renderTalkState(talk: Talk | null) {
+  // If talk changed or is no longer done with an answer, reset reading mode
+  if (!talk || talk.id !== currentLastTalk?.id || talk.phase !== 'done' || !talk.answerMarkdown) {
+    readingMode = false;
+  }
+
   currentLastTalk = talk;
   scheduleFit();
   const phase = talk?.phase ?? 'idle';
@@ -216,6 +336,7 @@ export function renderTalkState(talk: Talk | null) {
     if (pipMood) pipMood.textContent = '野生的 惡龍 Bro 出現了！勇者要怎麼做？';
     if (answerContainer) answerContainer.style.display = 'none';
     if (errorContainer) errorContainer.style.display = 'none';
+    updateReadingModeUI();
     return;
   }
 
@@ -257,9 +378,7 @@ export function renderTalkState(talk: Talk | null) {
 
       if (talk.answerMarkdown && answerContent && answerContainer) {
         const dirtyHtml = marked.parse(talk.answerMarkdown) as string;
-        const cleanHtml = DOMPurify.sanitize(dirtyHtml, {
-          ADD_ATTR: ['target', 'rel']
-        });
+        const cleanHtml = sanitizeHtml(dirtyHtml);
 
         answerContent.innerHTML = cleanHtml;
 
@@ -334,17 +453,21 @@ export function renderTalkState(talk: Talk | null) {
       break;
     }
   }
+
+  updateReadingModeUI();
 }
 
 /**
  * Top-level initialization with robust Error Boundary.
  */
-document.addEventListener('DOMContentLoaded', async () => {
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('DOMContentLoaded', async () => {
   try {
-    followActiveTabZoom(document.documentElement).catch(() => {});
+    followActiveTabZoom(document.documentElement, () => updateReadingModeUI()).catch(() => {});
     const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
     const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
     const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement | null;
+    const readingToggleBtn = document.getElementById('reading-toggle-btn') as HTMLButtonElement | null;
 
     if (input) {
       input.focus();
@@ -396,6 +519,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       paintPreviousCard(previousCard.getAttribute('aria-expanded') !== 'true');
     });
 
+    if (readingToggleBtn) {
+      readingToggleBtn.addEventListener('click', () => {
+        toggleReadingMode();
+      });
+    }
+
     if (copyBtn) {
       copyBtn.addEventListener('click', async () => {
         if (!currentLastTalk || !currentLastTalk.answerMarkdown) return;
@@ -442,3 +571,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 });
+}

@@ -424,7 +424,37 @@ kbd {
 
 .answer-avatar { width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--accent-color); image-rendering: pixelated; }
 .answer-header { justify-content: flex-start; }
-.answer-header .copy-btn { margin-left: auto; }
+.answer-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.reading-toggle-btn { flex-shrink: 0; }
+.reading-toggle-btn[aria-expanded="true"] { background: #2b3a52; color: var(--accent-color); border-color: var(--accent-color); }
+
+/* Reading mode layout: main vertical scrolling owned by answer-content; non-content areas collapsed */
+body[data-mode="reading"] { overflow-x: hidden; }
+body[data-mode="reading"] .popup-container {
+  height: min(calc(600px / var(--ttb-zoom, 1)), var(--ttb-max-h, calc(600px / var(--ttb-zoom, 1))));
+  overflow-x: hidden;
+}
+body[data-mode="reading"] .popup-main { overflow-y: hidden; gap: 0; }
+body[data-mode="reading"] .narration,
+body[data-mode="reading"] .input-card,
+body[data-mode="reading"] #previous-card,
+body[data-mode="reading"] #previous-detail,
+body[data-mode="reading"] #chat-view {
+  display: none !important;
+}
+body[data-mode="reading"] .answer-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+body[data-mode="reading"] .answer-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .source-line { display: inline; margin-right: 10px; letter-spacing: .08em; font-weight: 700; color: var(--accent-color); }
 .source-line[hidden] { display: none; }
 body[data-phase="done"] .narration-menu { display: none; }
