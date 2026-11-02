@@ -685,7 +685,7 @@ def prepare_launch(
             command += f" --effort {shlex.quote(execution['effort'])}"
         command += f' -i "$(cat {shlex.quote(str(prompt_file))})"'
     elif cli == "pi":
-        command = f"pi --model {shlex.quote(execution['model'])}"
+        command = f"pi --approve --model {shlex.quote(execution['model'])}"
         if execution["effort"] is not None:
             command += f" --thinking {shlex.quote(execution['effort'])}"
         command += f' "$(cat {shlex.quote(str(prompt_file))})"'

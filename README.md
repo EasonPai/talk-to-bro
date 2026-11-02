@@ -11,7 +11,7 @@
   - **Pip**：扮演熱心奔走的小弟（Pixel Art / Roguelike 風格），負責在介面上替使用者向老大請教。
   - **Bro**：在背後深思熟慮的老大（Gemini），專注提供高質量的翻譯與單字解析。
 - **堅固的 MV3 核心架構**：
-  - **Service Worker 主導時間推進**：SW 每秒輪詢（probe）背景 Bro Chat 分頁，杜絕背景分頁定時器節流（throttle）造成的逾時失準。
+  - **Service Worker 主導時間推進**：等待回覆時由 SW 約每 2 秒檢查（probe）背景 Bro Chat 分頁，另以約 30 秒的 watchdog 輔助喚醒，避免依賴背景分頁的計時器。
   - **單一真實狀態（SSOT）**：以 `chrome.storage` 作為全域狀態來源，SW 為唯一狀態寫入者，Popup 僅響應與渲染。
   - **Write-ahead 預先防護**：送出前先標記狀態，重啟或中斷時絕不盲目重複發送。
   - **零阻礙退路（Handoff）**：遇到未預期 DOM 改版、超時或驗證失敗時，自動將輸入複製至剪貼簿並導引至 Bro Chat，保證永不卡死。
@@ -63,6 +63,7 @@ npm test
 
 ## 相關文件與外部連結
 
+- **送出單字後的生命週期與失敗退路**：[流程圖與實作筆記](docs/knowledge/2026-11-02-word-submission-lifecycle.md)
 - **產品需求規格書 (PRD)**：[`docs/prd/2026-10-28-talk-to-bro-personally-prd.md`](docs/prd/2026-10-28-talk-to-bro-personally-prd.md)
   - 雲端 Notion 來源：[Notion PRD v1.1](https://app.notion.com/p/3c20e8c693da42eeb1e9436942b79aef)
 - **技術方案與開發計畫 (Tech Spec)**：[`docs/tech-spec/2026-10-28-talk-to-bro-personally-tech-design-and-plan.md`](docs/tech-spec/2026-10-28-talk-to-bro-personally-tech-design-and-plan.md)

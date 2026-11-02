@@ -100,12 +100,16 @@ Contents: 1 Scope and authority · 2 Wording · 3 Delivery workflow (work model)
 
 ## 8. Operating modes
 
-- The company runs in standard mode by default; only the Board switches modes (for example "enter unattended mode until 07:00" / "return to standard mode").
+- The company runs in one of three modes: standard (default), unattended or long-run. Only one is active at a time, and only the Board switches modes (for example "enter unattended mode until 07:00" / "enter long-run mode" / "return to standard mode").
 - The switch is `T work unattended on --until HH:MM` / `T work unattended off` (`--role Board`; the Board liaison relays the Board's words with `--evidence`). `--until` is required and the mode ends itself then. whoami shows the current mode; the CEO also announces a switch to every desk with `send`.
 - Unattended mode keeps the Mac awake (caffeinate) only on AC power while a desk (not the Board) has open work; it holds only while the Watch schedule is installed (so a later run can release it), never wakes a sleeping Mac and grants no new authority: every Board gate and One-Way Door still waits for the Board, who is notified on macOS.
 - **Standard mode (event-driven, default)**:
   - Every role, including CEO, PM and CTO, ends its turn once its work is dispatched or reported, so the Board can address any desk directly at any time; desks resume only when woken by events.
   - No blocking wait loops. awaitingTimeoutMs escalations are not tracked automatically; the Board is present.
+- **Long-run mode (長跑模式)**:
+  - Switch: `T work longrun on` / `T work longrun off` (`--role Board`; the Board liaison relays with `--evidence`). It has no `--until` and stays on until the Board turns it off. It is refused while unattended mode is on, and the reverse is also refused.
+  - Every other rule is the same as standard mode.
+  - Before any output meant for the Board (liaison decision requests, completed or blocked reports, PENDING BOARD summaries and direct answers to the Board), load the `/bro` skill and write the report in its style: plain words, no jargon, short. Keep commands, ticket IDs and file links unchanged, and list `bro` in the Skill tracking line. whoami shows `mode: longrun` with this reminder. If `bro` is unreachable, report blocked.
 - **Unattended mode (Board away)**:
   - Supervisors (CEO, PM, CTO or any appointer) must not end their turn while any dispatch is open.
   - Repeat `python3 <ep-agentic-orca-team>/scripts/team-setup.py --project <repo> inbox --terminal <own desk> --wait --timeout-ms 900000` (exit 3 = timeout checkpoint; never hand-parse raw `check --wait` output), passing --ack <delivery_id> after handling each batch, until every expected dispatch settles.
@@ -129,6 +133,7 @@ Contents: 1 Scope and authority · 2 Wording · 3 Delivery workflow (work model)
 
 - Launch every company member through `prepare-launch` and run its printed argv.
 - Copilot members always start with `copilot --yolo --model <model>`. Never launch a Copilot member without `--yolo` (for example via a bare `orca agent launch`).
+- AGY members use `--dangerously-skip-permissions`. Pi executes tools without per-call approval by default; use `--approve` for noninteractive project trust, not a nonexistent `--yolo` flag. These launch modes do not bypass Board approvals or override custom extension restrictions. Check the prepared command before launch and report permission prompts as blockers rather than claiming unattended readiness.
 
 ## 11. Task continuity
 

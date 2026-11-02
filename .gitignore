@@ -7,6 +7,7 @@ coverage/
 *.log
 
 # Skill Manager managed agent skills symlinks/targets (machine-specific)
+.agents/skills/*
 .claude/skills/*
 .codex/skills/*
 .copilot/skills/*

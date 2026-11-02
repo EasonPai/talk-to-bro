@@ -21,6 +21,7 @@ Welcome to **Talk To Bro** (`talk-to-bro`). This document serves as the Single S
 ### 運行環境要求
 - **Node.js >= 22**（專案以 `.nvmrc` 指定，`pretest` 會強制檢查 `node >= 22`）。
 - **套件管理**：使用 `npm`。
+- **版本同步**：本倉庫所有更改（含程式碼、設定與文件）皆須同步更新版本號，並保持 `package.json`、`package-lock.json`（頂層與根套件）及 `manifest.json` 的版本一致。
 
 ### 常用命令
 ```bash
@@ -147,7 +148,8 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
    - 若在 Worktree 內需要使用外部技能，需執行 link-worktree-skills 腳本（`products/agentic-env/scripts/link-worktree-skills.sh` 或相關工具腳本）建立符號連結與 local exclude 忽略。
 
 5. **`ep-*` 專屬技能單一維護來源原則 (Source of Truth for `ep-*` Skills)**：
-   - 所有 `ep-*` 技能的唯一編輯與維護來源（Source of Truth）一律嚴格限定於獨立儲存庫 `/Volumes/Extended/Documents/Developments/projects/ep-skills`（位於 `skills/<category>/<skill>/`）。
+   - 所有 `ep-*` 技能的唯一編輯與維護來源（Source of Truth）一律嚴格限定於 GitHub `EasonPai/ep-skills` 的本機 checkout（位於 `skills/<category>/<skill>/`）。**不寫死路徑**：一律執行 `bash .agents/skills/ep-agentic-env-setup/scripts/resolve-ep-skills-root.sh`（或任一 `.<agent>/skills/ep-agentic-env-setup/scripts/` 下同名腳本），只編輯它印出的目錄。腳本從目前專案往上逐層尋找 `ep-skills/source/ep-skills` 或 `ep-skills`，並驗證 origin 為 `EasonPai/ep-skills` 且含 `scripts/publish-skills.sh`。
+   - 解析失敗時**回報 blocked**，嚴禁自行猜測或改用其他副本；特殊位置可用 `EP_SKILLS_ROOT` 臨時覆蓋（同樣會驗證）。
    - **嚴格禁止**直接在專案的 `.<agent>/skills/ep-*`（symlinks）或 `~/.skills-manager/skills/ep-*` 快取中進行編輯。
    - 修改完成後，必須在 `ep-skills` 儲存庫中透過 `scripts/publish-skills.sh` 進行版本提交、推送到遠端 origin，並觸發 Skills Manager 刷新安裝；嚴禁在發布流程中使用強制推送（never force push）。
 <!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_END -->

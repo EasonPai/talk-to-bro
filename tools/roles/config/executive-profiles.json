@@ -91,6 +91,51 @@
           "effort": null
         }
       }
+    },
+    "trio-architect": {
+      "description": "Shared trio: PM and Architect (Copilot), Engineer (AGY). Board appointment authority remains separate from profile selection.",
+      "roles": {
+        "PM": {
+          "cli": "copilot",
+          "model": "gpt-6.1-sol",
+          "effort": "low"
+        },
+        "Architect": {
+          "cli": "copilot",
+          "model": "gpt-6.1-sol",
+          "effort": "low"
+        },
+        "Engineer": {
+          "cli": "agy",
+          "model": "gemini-3.8-flash-medium",
+          "effort": "medium"
+        },
+        "CEO": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "CTO": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Designer": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "Consultant": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        },
+        "QA": {
+          "cli": null,
+          "model": null,
+          "effort": null
+        }
+      }
     }
   }
 }

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "python3 \"$(git rev-parse --show-toplevel)/tools/roles/orca-team-hook.py\" --cli copilot --event session-start",
+        "timeoutSec": 30
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "python3 \"$(git rev-parse --show-toplevel)/tools/roles/orca-team-hook.py\" --cli copilot --event stop",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}

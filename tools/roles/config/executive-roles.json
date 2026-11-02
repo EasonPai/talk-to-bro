@@ -1,5 +1,14 @@
 {
   "$schema": "./executive-roles.schema.json",
+  "correctionRules": {
+    "recurring_edge_case": {
+      "instructions": "同類 edge case 復發或驗收失敗！必須調用 pstack /correct 進行根因診斷，並撰寫防禦性測試後方可提交。",
+      "mandatorySkill": "pstack /correct",
+      "requiredEvidence": [
+        ".scratch/orca-team/corrections/{ticket}-rca.md"
+      ]
+    }
+  },
   "policy": {
     "ackRequired": true,
     "assignmentRequired": true,
@@ -19,7 +28,7 @@
     "supervisorPollingAllowed": false,
     "titleIsAuthority": false
   },
-  "revision": "2026-10-30.4",
+  "revision": "2026-11-02.1",
   "roles": {
     "Architect": {
       "assignmentPolicy": {
@@ -30,9 +39,19 @@
       },
       "reportsTo": "human",
       "responsibilities": [
-        "董事會或 CEO 任命之架構諮詢",
+        "技術架構設計、根因分析與開發計畫撰寫（持久化至 project-tools.json 指定之 plans 目錄並以 work submit-plan 送審）",
+        "代碼架構審查、驗證與品質把關（具備 work verify 驗收審查權限）",
+        "董事會或 CEO 任命之架構諮詢與規格審核",
         "董事會或 CEO 安排之特定審查"
-      ]
+      ],
+      "stageHooks": {
+        "pre_submit_plan": {
+          "command": "/grilling with docs/plans/{plan_file}",
+          "description": "計畫提交審查前，必須調用 /grilling 自審並採納建議",
+          "outputArtifact": ".scratch/orca-team/evidence/{ticket}-grill-report.md",
+          "requiredSkill": "grilling"
+        }
+      }
     },
     "CEO": {
       "assignmentPolicy": {
@@ -116,7 +135,16 @@
         "僅在計畫遺漏、矛盾或技術障礙時以 work block --reason 回報，由 PM 轉 CTO",
         "工單因 QA 失敗退回時依 QA 證據修復後再 work done",
         "只實作工單 must 測項與驗收條件所需範圍；驗收深度依里程碑階段（project-tools.json milestones 的 stage，未標示視為 feature）：spike 只驗主流程與核心假設；feature 只驗工單列出的 must 測項；hardening 才做極限例外防禦；不自行追逐工單外的 edge case，發現時回報 PM 列為後續建議"
-      ]
+      ],
+      "stageHooks": {
+        "first_dispatch": {
+          "description": "收到新單時先 /clear，首輪實作調用 /implement，次輪修正免調用",
+          "requiredActions": [
+            "/clear",
+            "/implement"
+          ]
+        }
+      }
     },
     "PM": {
       "assignmentPolicy": {
@@ -137,7 +165,15 @@
         "工單須包含 CTO 撰寫的測試案例；只有 QA work verify --pass 才算完成，再派下一張",
         "QA 失敗次數由 work 記錄；超過 workflow.maxQaRetries（預設 2）時工單轉為 blocked 並待董事會決定，PM 送 CTO 與董事會決定放寬、拆單或繼續，再以 work unblock 或 work cancel 處理",
         "QA 回報的後續建議收集為新工單（不阻擋原工單結案），並更新原工單 frontmatter followups 數量"
-      ]
+      ],
+      "stageHooks": {
+        "pre_dispatch": {
+          "command": "/to-spec",
+          "description": "PM 派單給 Engineer 之前，必須調用 /to-spec 產出詳細規格",
+          "outputArtifact": "docs/specs/{ticket}-spec.md",
+          "requiredSkill": "to-spec"
+        }
+      }
     },
     "QA": {
       "assignmentPolicy": {
