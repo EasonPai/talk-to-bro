@@ -196,8 +196,20 @@ test('M3: draft in input is preserved across reading mode toggles with zero stor
   const env = createMockEnvironment();
   const origDoc = (globalThis as any).document;
   const origWin = (globalThis as any).window;
+  const origChrome = (globalThis as any).chrome;
   (globalThis as any).document = env.doc;
   (globalThis as any).window = env.win;
+
+  let storageSetCalls = 0;
+  let storageGetCalls = 0;
+  (globalThis as any).chrome = {
+    storage: {
+      local: {
+        set: (..._args: any[]) => { storageSetCalls++; },
+        get: (..._args: any[]) => { storageGetCalls++; }
+      }
+    }
+  };
 
   try {
     const popup = await import('../../src/popup/popup.ts');
@@ -211,13 +223,18 @@ test('M3: draft in input is preserved across reading mode toggles with zero stor
     // Toggle reading mode
     popup.toggleReadingMode();
     assert.equal(env.talkInput.value, 'user draft preserved');
+    assert.equal(storageSetCalls, 0, 'Toggle to reading mode must make 0 storage.set calls');
+    assert.equal(storageGetCalls, 0, 'Toggle to reading mode must make 0 storage.get calls');
 
     // Toggle back
     popup.toggleReadingMode();
     assert.equal(env.talkInput.value, 'user draft preserved');
+    assert.equal(storageSetCalls, 0, 'Toggle back to compact mode must make 0 storage.set calls');
+    assert.equal(storageGetCalls, 0, 'Toggle back to compact mode must make 0 storage.get calls');
   } finally {
     (globalThis as any).document = origDoc;
     (globalThis as any).window = origWin;
+    (globalThis as any).chrome = origChrome;
   }
 });
 

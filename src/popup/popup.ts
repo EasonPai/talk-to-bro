@@ -23,9 +23,9 @@ function sanitizeHtml(dirtyHtml: string): string {
       }
     }
   } catch {
-    // Fallback for non-browser/stub test environments
+    // Sanitization failure must never return un-sanitized dirty markup
   }
-  return dirtyHtml;
+  return '';
 }
 
 let currentLastTalk: Talk | null = null;
