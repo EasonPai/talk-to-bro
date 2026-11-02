@@ -1,2 +1,7 @@
 node_modules/
 dist/
+coverage/
+.scratch/
+.worktrees/
+.DS_Store
+*.log

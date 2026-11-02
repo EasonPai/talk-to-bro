@@ -1,7 +1,6 @@
-# Talk To Bro Personally (隨身聊)
+# Talk To Bro (隨身聊)
 
-`talk-to-bro-personally` 是 `agentic-development` 專案底下的獨立子產品。
-旨在打造一個輕量、極速的桌面 Chrome MV3 擴充套件，讓使用者（Pai）在瀏覽器任何分頁閱讀時，能透過快捷鍵直接叫出彈出視窗（Popup），輸入英文單字或片語，由背景常駐的 Gemini（**Bro**）使用已啟用翻譯 Skill 的對話（**Bro Chat**）進行解答，並在 Popup 中無縫讀取結果，徹底免除頻繁切換分頁與手動貼上的繁瑣步驟。
+`talk-to-bro` 是一個輕量、極速的桌面 Chrome MV3 擴充套件，讓使用者（Pai）在瀏覽器任何分頁閱讀時，能透過快捷鍵直接叫出彈出視窗（Popup），輸入英文單字或片語，由背景常駐的 Gemini（**Bro**）使用已啟用翻譯 Skill 的對話（**Bro Chat**）進行解答，並在 Popup 中無縫讀取結果，徹底免除頻繁切換分頁與手動貼上的繁瑣步驟。
 
 ---
 
@@ -22,8 +21,8 @@
 ## 目錄結構
 
 ```
-products/talk-to-bro-personally/
-├── README.md               # 產品總覽與架構說明
+talk-to-bro/
+├── README.md               # 專案總覽與架構說明
 ├── src/                    # Chrome MV3 擴充套件原始碼
 │   ├── manifest.json       # MV3 Manifest
 │   ├── popup/              # Popup 前端 (HTML/CSS/TS)
@@ -31,6 +30,7 @@ products/talk-to-bro-personally/
 │   ├── adapter/            # Gemini DOM 介接與選擇器 (Isolated World)
 │   └── offscreen/          # Offscreen Document (剪貼簿與音效輔助)
 ├── tests/                  # 單元測試與 E2E 整合測試
+├── scripts/                # 建置與驗證腳本
 └── docs/                   # 產品規格與文件
     ├── prd/                # 產品需求規格書 (PRD v1.1)
     ├── tech-spec/          # 技術設計與架構規格 (Tech Spec v1.0)
@@ -41,11 +41,29 @@ products/talk-to-bro-personally/
 
 ---
 
+## 快速開始
+
+### 環境需求
+- Node.js >= 22 (建議使用 `.nvmrc`：`nvm use`)
+- Google Chrome (或 Chrome for Testing)
+
+### 安裝與建置
+```bash
+npm install
+npm run build
+```
+建置完成後，成品位於 `dist/` 目錄，可直接載入 Chrome Extensions (`chrome://extensions` -> Load unpacked)。
+
+### 執行測試
+```bash
+npm test
+```
+
+---
+
 ## 相關文件與外部連結
 
 - **產品需求規格書 (PRD)**：[`docs/prd/2026-10-28-talk-to-bro-personally-prd.md`](docs/prd/2026-10-28-talk-to-bro-personally-prd.md)
   - 雲端 Notion 來源：[Notion PRD v1.1](https://app.notion.com/p/3c20e8c693da42eeb1e9436942b79aef)
 - **技術方案與開發計畫 (Tech Spec)**：[`docs/tech-spec/2026-10-28-talk-to-bro-personally-tech-design-and-plan.md`](docs/tech-spec/2026-10-28-talk-to-bro-personally-tech-design-and-plan.md)
   - 雲端 Notion 來源：[Arena Talk To Bro Personally](https://app.notion.com/p/hi-eason/Arena-Talk-To-Bro-Personally-90e76761366241b98283f2aac3795b28?source=copy_link)
-- **全專案產品清單**：[`products/README.md`](../README.md)
-- **通用術語表**：[`docs/GLOSSARY.md`](../../docs/GLOSSARY.md)
