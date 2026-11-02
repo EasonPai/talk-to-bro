@@ -16,3 +16,5 @@ coverage/
 .grok/skills/*
 .hermes/skills/*
 .opencode/skills/*
+
+.pi/skills/*
