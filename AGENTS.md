@@ -44,6 +44,7 @@ npm run verify:m5
 ### 圖表規範 (Diagrams & Visualizations)
 - **強制使用 Mermaid**：所有流程圖、架構圖、狀態圖一律使用 Mermaid（` ```mermaid ... ``` `）語法。
 - **嚴格禁止純文字 ASCII 框線圖**。
+- **終端機環境與窄寬度自動降級規範 (CLI / Terminal & Narrow Width Degradation)**：當處於終端機（CLI / Terminal）環境、窄寬度檢視或發生寬度降級（導致 Mermaid 無法圖形渲染、排版破版或僅顯示原始碼）時，**將自動降級，不再輸出 Mermaid**，改用終端機原生友善、排版清晰的等寬程式碼區塊（` ```text `）或結構化流程清單呈現。
 - **嚴格禁止在節點標籤內使用 HTML 標籤**（如 `<br>`, `<br/>`, `<b>` 等）。換行改用圓括號 `( ... )` 或連字號 ` - `。
 - 節點標籤若包含特殊字元，一律使用雙引號包覆（例如：`id["Bro Chat (Gemini)"]`）。
 
