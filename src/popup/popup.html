@@ -65,7 +65,10 @@
         <div class="answer-header">
           <img class="answer-avatar" src="assets/dragon.jpg" alt="" width="24" height="24">
           <h1 id="answer-title" class="answer-title">惡龍的回覆 (Answer)</h1>
-          <button id="copy-btn" class="copy-btn">一鍵複製</button>
+          <div class="answer-actions">
+            <button id="reading-toggle-btn" class="reading-toggle-btn" type="button" aria-expanded="false" aria-controls="answer-content">展開閱讀</button>
+            <button id="copy-btn" class="copy-btn">一鍵複製</button>
+          </div>
         </div>
         <div id="answer-content" class="answer-content" role="region" aria-labelledby="answer-title" tabindex="0"></div>
       </section>
