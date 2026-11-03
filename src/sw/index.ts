@@ -8,32 +8,12 @@ import { RealBroAdapter } from './adapter-real.ts';
 import { performHandoff } from './handoff.ts';
 import type { Talk, UiState } from '../shared/types.ts';
 
+import { UiQueue, syncActionRouting, reconcileUiOnBoot } from './ui-state.ts';
+
 const ALARM_NAME = 'ttb-watchdog';
 
-// Serialized UI queue for state mutations
-class UiQueue {
-  private queue = Promise.resolve();
-  run<T>(fn: () => Promise<T>): Promise<T> {
-    const res = this.queue.then(fn, fn);
-    this.queue = res.then(() => {}, () => {});
-    return res;
-  }
-}
-const uiQueue = new UiQueue();
-
-// Action routing sync function
-export async function syncActionRouting(): Promise<void> {
-  try {
-    const ui = await getUiStorage(chrome.storage?.local);
-    if (ui.mode === 'sidepanel') {
-      await chrome.action?.setPopup({ popup: '' });
-    } else {
-      await chrome.action?.setPopup({ popup: 'popup.html' });
-    }
-  } catch (err) {
-    console.error('[SW] Failed to sync action routing:', err);
-  }
-}
+export const uiQueue = new UiQueue();
+const lastHostSeq: Record<string, number> = {};
 
 // Action click listener when in sidepanel mode
 chrome.action?.onClicked.addListener(async (tab) => {
@@ -113,6 +93,16 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'INVALID_DRAFT_PAYLOAD' });
         return;
       }
+      const host = msg.host || 'popup';
+      const hostSeq = typeof msg.hostSeq === 'number' ? msg.hostSeq : 0;
+      if (hostSeq > 0 && lastHostSeq[host] !== undefined && hostSeq <= lastHostSeq[host]) {
+        const current = await getUiStorage(chrome.storage?.local);
+        sendResponse({ ok: true, ignored: true, revision: current.revision });
+        return;
+      }
+      if (hostSeq > 0) {
+        lastHostSeq[host] = hostSeq;
+      }
       const current = await getUiStorage(chrome.storage?.local);
       const next: UiState = {
         ...current,
@@ -153,17 +143,25 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'talk/submit') {
     (async () => {
       await readyPromise;
+      const submittedDraftRevision = typeof msg.draftRevision === 'number' ? msg.draftRevision : undefined;
       const result = await runner.submit(msg.text);
       if (result.accepted && result.talk) {
         const acceptedTalk = result.talk;
-        // M6: Conditionally clear draft only if it matches submitted text
+        // M6: Conditionally clear draft only if it matches submitted text and was not superseded
         await uiQueue.run(async () => {
           const currentUi = await getUiStorage(chrome.storage?.local);
-          if (currentUi.draft.trim() === msg.text.trim()) {
+          const textMatches = currentUi.draft.trim() === msg.text.trim();
+          const notOverwritten = submittedDraftRevision === undefined || currentUi.revision <= submittedDraftRevision || textMatches;
+          if (textMatches && notOverwritten) {
             await saveUiStorage(chrome.storage?.local, {
               ...currentUi,
               draft: '',
               revision: currentUi.revision + 1,
+              acceptedTalkId: acceptedTalk.id
+            });
+          } else {
+            await saveUiStorage(chrome.storage?.local, {
+              ...currentUi,
               acceptedTalkId: acceptedTalk.id
             });
           }
@@ -260,6 +258,7 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
 (async () => {
   await readyPromise;
   await syncActionRouting();
+  await reconcileUiOnBoot(chrome.storage?.local);
   await runner.boot();
   console.log('[SW] Talk To Bro Personally Service Worker initialized and reconciled.');
 })();

@@ -479,6 +479,8 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     const pinText = document.getElementById('pin-toggle-text');
 
     let isComposing = false;
+    let hostSeq = 0;
+    let currentRevision = 0;
 
     // Setup Pin / Unpin button
     if (pinBtn && pinText) {
@@ -501,32 +503,79 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 
           if (isSidepanel) {
             // Unpin -> Switch to Popup
-            await chrome.runtime.sendMessage({
-              action: 'ui/setMode',
-              mode: 'popup',
-              draft: currentDraft
+            const modeRes: any = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({
+                action: 'ui/setMode',
+                mode: 'popup',
+                draft: currentDraft
+              }, resolve);
             });
+            if (!modeRes?.ok) {
+              throw new Error(modeRes?.error || '儲存模式失敗');
+            }
+
+            let openSuccess = false;
             if (windowId && chrome.action?.openPopup) {
               try {
                 await chrome.action.openPopup({ windowId });
-              } catch (e) {
-                console.warn('[Popup] openPopup call warning:', e);
+                openSuccess = true;
+              } catch (openErr: any) {
+                console.warn('[Popup] openPopup failed, initiating rollback:', openErr);
+                // Rollback mode to sidepanel
+                await new Promise((resolve) => {
+                  chrome.runtime.sendMessage({
+                    action: 'ui/setMode',
+                    mode: 'sidepanel',
+                    draft: currentDraft
+                  }, resolve);
+                });
+                throw new Error(`開啟 Popup 失敗 (${openErr?.message || openErr})，已復原側邊欄偏好`);
               }
             }
-            if (windowId && (chrome as any).sidePanel?.close) {
-              await (chrome as any).sidePanel.close({ windowId });
+
+            // Only close sidepanel if openPopup succeeded
+            if (openSuccess && windowId && (chrome as any).sidePanel?.close) {
+              try {
+                await (chrome as any).sidePanel.close({ windowId });
+              } catch (closeErr) {
+                console.warn('[Popup] sidePanel.close warning:', closeErr);
+              }
             }
           } else {
             // Pin -> Switch to Sidepanel
-            await chrome.runtime.sendMessage({
-              action: 'ui/setMode',
-              mode: 'sidepanel',
-              draft: currentDraft
+            const modeRes: any = await new Promise((resolve) => {
+              chrome.runtime.sendMessage({
+                action: 'ui/setMode',
+                mode: 'sidepanel',
+                draft: currentDraft
+              }, resolve);
             });
-            if (windowId && (chrome as any).sidePanel?.open) {
-              await (chrome as any).sidePanel.open({ windowId });
+            if (!modeRes?.ok) {
+              throw new Error(modeRes?.error || '儲存模式失敗');
             }
-            window.close();
+
+            let openSuccess = false;
+            if (windowId && (chrome as any).sidePanel?.open) {
+              try {
+                await (chrome as any).sidePanel.open({ windowId });
+                openSuccess = true;
+              } catch (openErr: any) {
+                console.warn('[Popup] sidePanel.open failed, initiating rollback:', openErr);
+                // Rollback mode to popup
+                await new Promise((resolve) => {
+                  chrome.runtime.sendMessage({
+                    action: 'ui/setMode',
+                    mode: 'popup',
+                    draft: currentDraft
+                  }, resolve);
+                });
+                throw new Error(`開啟側邊欄失敗 (${openErr?.message || openErr})，已復原 Popup 偏好`);
+              }
+            }
+
+            if (openSuccess) {
+              window.close();
+            }
           }
         } catch (err: any) {
           console.error('[Popup] Pin toggle failed:', err);
@@ -542,11 +591,18 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     }
 
     const saveDraft = (text: string) => {
+      hostSeq++;
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         chrome.runtime.sendMessage({
           action: 'ui/saveDraft',
           text,
-          host: isSidepanel ? 'sidepanel' : 'popup'
+          host: isSidepanel ? 'sidepanel' : 'popup',
+          hostSeq,
+          baseRevision: currentRevision
+        }, (res) => {
+          if (res?.ok && typeof res.revision === 'number') {
+            currentRevision = Math.max(currentRevision, res.revision);
+          }
         });
       }
     };
@@ -585,7 +641,13 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
           if (rawText.trim().length === 0) return;
 
           const prevTalk = currentLastTalk;
-          chrome.runtime.sendMessage({ action: 'talk/submit', text: rawText }, (res) => {
+          chrome.runtime.sendMessage({
+            action: 'talk/submit',
+            text: rawText,
+            draftRevision: currentRevision,
+            host: isSidepanel ? 'sidepanel' : 'popup',
+            hostSeq
+          }, (res) => {
             const outcome = submitOutcomeOf(res);
             if (outcome.kind === 'accepted') {
               submitPreviousSummary(prevTalk);
@@ -638,6 +700,10 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       const runtime = resRuntime['runtime:v1'];
       const ui = resUi['ui:v1'];
 
+      if (ui && typeof ui.revision === 'number') {
+        currentRevision = Math.max(currentRevision, ui.revision);
+      }
+
       renderTalkState(runtime?.lastTalk || null);
 
       if (ui && typeof ui.draft === 'string' && input && !isTalkBusy(runtime?.lastTalk)) {
@@ -657,9 +723,12 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
           if (changes['runtime:v1']) {
             renderTalkState(changes['runtime:v1'].newValue?.lastTalk || null);
           }
-          if (changes['ui:v1'] && input && !isComposing) {
+          if (changes['ui:v1']) {
             const nextUi = changes['ui:v1'].newValue;
-            if (nextUi && typeof nextUi.draft === 'string') {
+            if (nextUi && typeof nextUi.revision === 'number') {
+              currentRevision = Math.max(currentRevision, nextUi.revision);
+            }
+            if (nextUi && typeof nextUi.draft === 'string' && input && !isComposing) {
               if (!isTalkBusy(currentLastTalk) && input.value !== nextUi.draft) {
                 input.value = nextUi.draft;
                 if (counter) {
