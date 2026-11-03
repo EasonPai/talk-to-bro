@@ -4,13 +4,21 @@ import type {
   LogEntry,
   RuntimeV1Storage,
   SessionV1Storage,
-  SettingsV1
+  SettingsV1,
+  UiState
 } from './types.ts';
 
 export const RUNTIME_STORAGE_KEY = 'runtime:v1';
 export const SESSION_STORAGE_KEY = 'session:v1';
 export const SETTINGS_STORAGE_KEY = 'settings:v1';
+export const UI_STORAGE_KEY = 'ui:v1';
 export const MAX_LOG_ENTRIES = 2_000;
+
+export const DEFAULT_UI_STATE: UiState = {
+  mode: 'popup',
+  draft: '',
+  revision: 0
+};
 
 export interface StorageAreaLike {
   get(keys?: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>>;
@@ -57,6 +65,27 @@ export async function saveSettingsStorage(
   settings: SettingsV1
 ): Promise<void> {
   await storage.set({ [SETTINGS_STORAGE_KEY]: settings });
+}
+
+export async function getUiStorage(storage: StorageAreaLike): Promise<UiState> {
+  const result = await storage.get(UI_STORAGE_KEY);
+  const data = result[UI_STORAGE_KEY] as Partial<UiState> | undefined;
+  const state: UiState = {
+    mode: data?.mode === 'sidepanel' ? 'sidepanel' : 'popup',
+    draft: typeof data?.draft === 'string' ? data.draft : '',
+    revision: typeof data?.revision === 'number' ? data.revision : 0
+  };
+  if (data?.acceptedTalkId !== undefined) {
+    state.acceptedTalkId = data.acceptedTalkId;
+  }
+  return state;
+}
+
+export async function saveUiStorage(
+  storage: StorageAreaLike,
+  ui: UiState
+): Promise<void> {
+  await storage.set({ [UI_STORAGE_KEY]: ui });
 }
 
 /**

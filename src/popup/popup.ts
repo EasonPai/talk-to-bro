@@ -463,11 +463,93 @@ export function renderTalkState(talk: Talk | null) {
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('DOMContentLoaded', async () => {
   try {
-    followActiveTabZoom(document.documentElement, () => updateReadingModeUI()).catch(() => {});
+    const isSidepanel = typeof window !== 'undefined' &&
+      (window.location.pathname.includes('sidepanel') || document.location.pathname.endsWith('sidepanel.html'));
+    document.documentElement.setAttribute('data-host', isSidepanel ? 'sidepanel' : 'popup');
+
+    if (!isSidepanel) {
+      followActiveTabZoom(document.documentElement, () => updateReadingModeUI()).catch(() => {});
+    }
+
     const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
     const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
     const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement | null;
     const readingToggleBtn = document.getElementById('reading-toggle-btn') as HTMLButtonElement | null;
+    const pinBtn = document.getElementById('pin-toggle-btn') as HTMLButtonElement | null;
+    const pinText = document.getElementById('pin-toggle-text');
+
+    let isComposing = false;
+
+    // Setup Pin / Unpin button
+    if (pinBtn && pinText) {
+      if (isSidepanel) {
+        pinBtn.title = '取消釘選 (切回彈出視窗)';
+        pinBtn.setAttribute('aria-label', '取消釘選');
+        pinText.textContent = '取消釘選';
+      } else {
+        pinBtn.title = '釘選至側邊欄';
+        pinBtn.setAttribute('aria-label', '釘選至側邊欄');
+        pinText.textContent = '釘選';
+      }
+
+      pinBtn.addEventListener('click', async () => {
+        const currentDraft = input?.value || '';
+        pinBtn.disabled = true;
+        try {
+          const currentWindow = await chrome.windows?.getCurrent();
+          const windowId = currentWindow?.id;
+
+          if (isSidepanel) {
+            // Unpin -> Switch to Popup
+            await chrome.runtime.sendMessage({
+              action: 'ui/setMode',
+              mode: 'popup',
+              draft: currentDraft
+            });
+            if (windowId && chrome.action?.openPopup) {
+              try {
+                await chrome.action.openPopup({ windowId });
+              } catch (e) {
+                console.warn('[Popup] openPopup call warning:', e);
+              }
+            }
+            if (windowId && (chrome as any).sidePanel?.close) {
+              await (chrome as any).sidePanel.close({ windowId });
+            }
+          } else {
+            // Pin -> Switch to Sidepanel
+            await chrome.runtime.sendMessage({
+              action: 'ui/setMode',
+              mode: 'sidepanel',
+              draft: currentDraft
+            });
+            if (windowId && (chrome as any).sidePanel?.open) {
+              await (chrome as any).sidePanel.open({ windowId });
+            }
+            window.close();
+          }
+        } catch (err: any) {
+          console.error('[Popup] Pin toggle failed:', err);
+          pinBtn.disabled = false;
+          const errorContainer = document.getElementById('error-container');
+          const errorMsg = document.getElementById('error-message');
+          if (errorContainer && errorMsg) {
+            errorContainer.style.display = 'block';
+            errorMsg.textContent = `切換失敗：${err?.message || err}`;
+          }
+        }
+      });
+    }
+
+    const saveDraft = (text: string) => {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+          action: 'ui/saveDraft',
+          text,
+          host: isSidepanel ? 'sidepanel' : 'popup'
+        });
+      }
+    };
 
     if (input) {
       input.focus();
@@ -478,14 +560,17 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
         if (counter) {
           counter.textContent = `${len} / 300`;
         }
+        if (!isComposing) {
+          saveDraft(input.value);
+        }
       });
 
-      let isComposing = false;
       input.addEventListener('compositionstart', () => {
         isComposing = true;
       });
       input.addEventListener('compositionend', () => {
         isComposing = false;
+        saveDraft(input.value);
       });
 
       input.addEventListener('keydown', (e) => {
@@ -546,16 +631,43 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 
     // Read current state from storage
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      const res = await chrome.storage.local.get('runtime:v1');
-      const runtime = res['runtime:v1'];
+      const [resRuntime, resUi] = await Promise.all([
+        chrome.storage.local.get('runtime:v1'),
+        chrome.storage.local.get('ui:v1')
+      ]);
+      const runtime = resRuntime['runtime:v1'];
+      const ui = resUi['ui:v1'];
+
       renderTalkState(runtime?.lastTalk || null);
+
+      if (ui && typeof ui.draft === 'string' && input && !isTalkBusy(runtime?.lastTalk)) {
+        if (!input.value) {
+          input.value = ui.draft;
+          if (counter) {
+            counter.textContent = `${ui.draft.length} / 300`;
+          }
+        }
+      }
 
       window.addEventListener('pagehide', clearHudTimer);
 
-      // Listen for runtime updates
+      // Listen for runtime & ui updates
       chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes['runtime:v1']) {
-          renderTalkState(changes['runtime:v1'].newValue?.lastTalk || null);
+        if (area === 'local') {
+          if (changes['runtime:v1']) {
+            renderTalkState(changes['runtime:v1'].newValue?.lastTalk || null);
+          }
+          if (changes['ui:v1'] && input && !isComposing) {
+            const nextUi = changes['ui:v1'].newValue;
+            if (nextUi && typeof nextUi.draft === 'string') {
+              if (!isTalkBusy(currentLastTalk) && input.value !== nextUi.draft) {
+                input.value = nextUi.draft;
+                if (counter) {
+                  counter.textContent = `${nextUi.draft.length} / 300`;
+                }
+              }
+            }
+          }
         }
       });
     }
