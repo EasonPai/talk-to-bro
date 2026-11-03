@@ -501,3 +501,74 @@ body[data-phase="done"] .submit-hint { display: none; }
 
 /* #50: locked composer while a Talk is in flight */
 .composer textarea[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; caret-color: transparent; }
+
+/* T-1: Pin / Unpin button in header */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pin-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pin-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent-color);
+}
+
+.pin-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.pin-toggle-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* T-1: Side Panel host styles */
+html[data-host="sidepanel"],
+html[data-host="sidepanel"] body {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  overflow-x: hidden !important;
+}
+
+html[data-host="sidepanel"] .popup-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  padding: 12px !important;
+  gap: 12px !important;
+  box-sizing: border-box !important;
+}
+
+html[data-host="sidepanel"] .popup-main {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+html[data-host="sidepanel"] .answer-content pre,
+html[data-host="sidepanel"] .answer-content table {
+  overflow-x: auto;
+  max-width: 100%;
+}

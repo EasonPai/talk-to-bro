@@ -6,6 +6,9 @@ import {
   saveRuntimeStorage,
   getSessionStorage,
   saveSessionStorage,
+  getUiStorage,
+  saveUiStorage,
+  DEFAULT_UI_STATE,
   writeAheadTalk,
   finalizeTerminalTalk,
   evictOldestLogEntries,
@@ -124,4 +127,38 @@ test('Storage - Session storage preservation and isolation', async () => {
   const session = await getSessionStorage(storage);
   assert.equal(session?.bootId, 'boot-uuid-12345');
   assert.equal(session?.broTab?.tabId, 99);
+});
+
+test('Storage - UI storage defaults and independence from runtime storage (M6/M8/M12)', async () => {
+  const storage = new MemoryStorage();
+
+  // 1. Missing key returns default UiState
+  const initialUi = await getUiStorage(storage);
+  assert.deepEqual(initialUi, DEFAULT_UI_STATE);
+  assert.equal(initialUi.mode, 'popup');
+  assert.equal(initialUi.draft, '');
+  assert.equal(initialUi.revision, 0);
+
+  // 2. Set runtime talk
+  const t0 = 1700000000000;
+  const talk = createTalk('Test Talk', t0, 'talk-ui-iso-1');
+  await writeAheadTalk(storage, talk);
+
+  // 3. Save UI storage
+  await saveUiStorage(storage, {
+    mode: 'sidepanel',
+    draft: 'Draft text for sidepanel',
+    revision: 1
+  });
+
+  // Verify UI storage updated
+  const updatedUi = await getUiStorage(storage);
+  assert.equal(updatedUi.mode, 'sidepanel');
+  assert.equal(updatedUi.draft, 'Draft text for sidepanel');
+  assert.equal(updatedUi.revision, 1);
+
+  // 4. Verify runtime:v1 is completely unaffected
+  const runtime = await getRuntimeStorage(storage);
+  assert.equal(runtime.lastTalk?.id, 'talk-ui-iso-1');
+  assert.equal(runtime.lastTalk?.text, 'Test Talk');
 });

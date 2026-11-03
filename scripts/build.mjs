@@ -85,6 +85,7 @@ async function build() {
 
   // Copy HTML & CSS
   fs.copyFileSync(path.join(SRC_DIR, 'popup/popup.html'), path.join(DIST_DIR, 'popup.html'));
+  fs.copyFileSync(path.join(SRC_DIR, 'popup/popup.html'), path.join(DIST_DIR, 'sidepanel.html'));
   fs.copyFileSync(path.join(SRC_DIR, 'popup/popup.css'), path.join(DIST_DIR, 'popup.css'));
   fs.cpSync(path.join(SRC_DIR, 'popup/assets'), path.join(DIST_DIR, 'assets'), { recursive: true });
 

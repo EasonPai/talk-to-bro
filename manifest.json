@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Talk To Bro Personally",
-  "version": "0.1.4",
+  "version": "0.1.9",
   "description": "Chrome MV3 Extension for Talk To Bro Personally",
-  "minimum_chrome_version": "132",
+  "minimum_chrome_version": "141",
   "permissions": [
     "storage",
     "tabs",
     "scripting",
     "alarms",
     "offscreen",
-    "clipboardWrite"
+    "clipboardWrite",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://gemini.google.com/*"
@@ -22,6 +23,9 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Talk To Bro Personally"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "options_ui": {
     "page": "options.html",

@@ -171,6 +171,16 @@ export interface TalkStats {
   formattedReadBackRate: string;
 }
 
+// UI state and persistence models for T-1
+export type UiMode = 'popup' | 'sidepanel';
+
+export interface UiState {
+  mode: UiMode;
+  draft: string;
+  revision: number;
+  acceptedTalkId?: string;
+}
+
 // Reconcile decision
 export type ReconcileDecision =
   | { action: 'noop' }

@@ -110,6 +110,13 @@ test('popup.html contains reading-toggle-btn with correct ARIA attributes', () =
   assert.match(POPUP_HTML, />展開閱讀<\/button>/);
 });
 
+test('popup.html contains pin-toggle-btn with accessible markup (T-1)', () => {
+  assert.match(POPUP_HTML, /<button\s+id="pin-toggle-btn"[^>]*class="pin-toggle-btn"/);
+  assert.match(POPUP_HTML, /id="pin-toggle-text"/);
+  assert.match(POPUP_HTML, /aria-label="釘選至側邊欄"/);
+  assert.match(POPUP_HTML, /title="釘選至側邊欄"/);
+});
+
 test('M1: reading-toggle-btn only appears for done state with answerMarkdown and toggles correctly', async () => {
   const env = createMockEnvironment();
   const origDoc = (globalThis as any).document;

@@ -2,13 +2,29 @@
 // Background Service Worker for Talk To Bro Personally (MV3)
 import { getBootReadyPromise } from './boot.ts';
 import { TalkRunner } from './runner.ts';
-import { getRuntimeStorage, saveRuntimeStorage, getSettingsStorage } from '../shared/storage.ts';
+import { getRuntimeStorage, saveRuntimeStorage, getSettingsStorage, getUiStorage, saveUiStorage } from '../shared/storage.ts';
 import { computeStats } from '../shared/stats.ts';
 import { RealBroAdapter } from './adapter-real.ts';
 import { performHandoff } from './handoff.ts';
-import type { Talk } from '../shared/types.ts';
+import type { Talk, UiState } from '../shared/types.ts';
+
+import { UiQueue, syncActionRouting, reconcileUiOnBoot } from './ui-state.ts';
 
 const ALARM_NAME = 'ttb-watchdog';
+
+export const uiQueue = new UiQueue();
+const lastHostSeq: Record<string, number> = {};
+
+// Action click listener when in sidepanel mode
+chrome.action?.onClicked.addListener(async (tab) => {
+  if (tab.windowId) {
+    try {
+      await (chrome as any).sidePanel?.open({ windowId: tab.windowId });
+    } catch (err) {
+      console.error('[SW] Failed to open side panel on action click:', err);
+    }
+  }
+});
 
 // Real Bro Adapter connected to background Gemini tab and on-demand injected content script
 const realAdapter = new RealBroAdapter({
@@ -63,10 +79,94 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.action === 'ui/getState') {
+    (async () => {
+      const state = await getUiStorage(chrome.storage?.local);
+      sendResponse({ ok: true, state });
+    })();
+    return true;
+  }
+
+  if (msg.action === 'ui/saveDraft') {
+    uiQueue.run(async () => {
+      if (typeof msg.text !== 'string') {
+        sendResponse({ ok: false, error: 'INVALID_DRAFT_PAYLOAD' });
+        return;
+      }
+      const host = msg.host || 'popup';
+      const hostSeq = typeof msg.hostSeq === 'number' ? msg.hostSeq : 0;
+      if (hostSeq > 0 && lastHostSeq[host] !== undefined && hostSeq <= lastHostSeq[host]) {
+        const current = await getUiStorage(chrome.storage?.local);
+        sendResponse({ ok: true, ignored: true, revision: current.revision });
+        return;
+      }
+      if (hostSeq > 0) {
+        lastHostSeq[host] = hostSeq;
+      }
+      const current = await getUiStorage(chrome.storage?.local);
+      const next: UiState = {
+        ...current,
+        draft: msg.text,
+        revision: current.revision + 1
+      };
+      await saveUiStorage(chrome.storage?.local, next);
+      sendResponse({ ok: true, revision: next.revision });
+    }).catch((err) => {
+      sendResponse({ ok: false, error: String(err) });
+    });
+    return true;
+  }
+
+  if (msg.action === 'ui/setMode') {
+    uiQueue.run(async () => {
+      const mode = msg.mode === 'sidepanel' ? 'sidepanel' : 'popup';
+      const current = await getUiStorage(chrome.storage?.local);
+      const next: UiState = {
+        ...current,
+        mode,
+        draft: typeof msg.draft === 'string' ? msg.draft : current.draft,
+        revision: current.revision + 1
+      };
+      await saveUiStorage(chrome.storage?.local, next);
+      if (mode === 'sidepanel') {
+        await chrome.action?.setPopup({ popup: '' });
+      } else {
+        await chrome.action?.setPopup({ popup: 'popup.html' });
+      }
+      sendResponse({ ok: true, state: next });
+    }).catch((err) => {
+      sendResponse({ ok: false, error: String(err) });
+    });
+    return true;
+  }
+
   if (msg.action === 'talk/submit') {
     (async () => {
       await readyPromise;
+      const submittedDraftRevision = typeof msg.draftRevision === 'number' ? msg.draftRevision : undefined;
       const result = await runner.submit(msg.text);
+      if (result.accepted && result.talk) {
+        const acceptedTalk = result.talk;
+        // M6: Conditionally clear draft only if it matches submitted text and was not superseded
+        await uiQueue.run(async () => {
+          const currentUi = await getUiStorage(chrome.storage?.local);
+          const textMatches = currentUi.draft.trim() === msg.text.trim();
+          const notOverwritten = submittedDraftRevision === undefined || currentUi.revision <= submittedDraftRevision || textMatches;
+          if (textMatches && notOverwritten) {
+            await saveUiStorage(chrome.storage?.local, {
+              ...currentUi,
+              draft: '',
+              revision: currentUi.revision + 1,
+              acceptedTalkId: acceptedTalk.id
+            });
+          } else {
+            await saveUiStorage(chrome.storage?.local, {
+              ...currentUi,
+              acceptedTalkId: acceptedTalk.id
+            });
+          }
+        });
+      }
       sendResponse(result);
     })();
     return true;
@@ -157,6 +257,8 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
 // Top-level startup invocation
 (async () => {
   await readyPromise;
+  await syncActionRouting();
+  await reconcileUiOnBoot(chrome.storage?.local);
   await runner.boot();
   console.log('[SW] Talk To Bro Personally Service Worker initialized and reconciled.');
 })();
