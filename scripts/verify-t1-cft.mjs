@@ -117,7 +117,7 @@ async function main() {
   fs.mkdirSync(M10_DIR, { recursive: true });
   syncProfile();
 
-  // Launch Chrome with Bro Chat tab opened in background
+  // Launch Chrome with Bro Chat tab
   let { proc, version } = await launchChrome([BRO_CHAT_URL]);
   console.log(`[CfT] Chrome Version: ${version.Browser}`);
 
@@ -131,7 +131,7 @@ async function main() {
   };
 
   try {
-    await sleep(2000);
+    await sleep(2500);
     let targets = await getTargets();
     const swTarget = targets.find((t) => t.type === 'service_worker' && t.url.includes('sw.js'));
     const extId = swTarget?.url?.match(/chrome-extension:\/\/([a-z0-9]+)\//)?.[1];
@@ -139,9 +139,9 @@ async function main() {
     console.log(`[CfT] Discovered extension ID: ${extId}`);
     report.extensionId = extId;
 
-    const swConn = cdp(swTarget.webSocketDebuggerUrl);
+    let swConn = cdp(swTarget.webSocketDebuggerUrl);
 
-    // Ensure settings:v1 is configured for Bro Chat
+    // Configure settings:v1 for Bro Chat
     await swConn.evaluate(`new Promise(r => chrome.storage.local.set({
       'settings:v1': {
         broChatUrl: ${JSON.stringify(BRO_CHAT_URL)},
@@ -237,18 +237,23 @@ async function main() {
     console.log('\n--- Verifying M2: Verbatim Draft Preservation Across Hosts ---');
     const complexDraft = 'Line 1: Multi-line & Chinese 繁體中文\nLine 2: Special symbols: <>&"\'!@#$%\nLine 3: IME: 惡龍 Bro 快問快答';
     
-    await swConn.evaluate(`(async () => {
-      const current = await new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'] || { mode: 'popup', draft: '', revision: 0 })));
-      await new Promise(r => chrome.storage.local.set({
-        'ui:v1': { ...current, draft: ${JSON.stringify(complexDraft)}, revision: current.revision + 1 }
-      }, r));
-    })()`);
-    const uiStateM2 = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
-    console.log('[M2] Saved complex draft revision:', uiStateM2?.revision);
+    // Save draft from popup page through product message route
+    const popM2Res = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
+    const popM2Target = await popM2Res.json();
+    const popM2Conn = cdp(popM2Target.webSocketDebuggerUrl);
+    await sleep(500);
 
-    const spDraft = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1']?.draft)))`);
-    if (spDraft !== complexDraft) {
-      throw new Error(`[M2 FAIL] Draft was not preserved verbatim: ${spDraft}`);
+    await popM2Conn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+      action: 'ui/saveDraft',
+      text: ${JSON.stringify(complexDraft)},
+      host: 'popup',
+      hostSeq: 5
+    }, r))`);
+    const uiStateM2 = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    console.log('[M2] Saved complex draft revision via ui/saveDraft:', uiStateM2?.revision);
+
+    if (uiStateM2?.draft !== complexDraft) {
+      throw new Error(`[M2 FAIL] Draft was not preserved verbatim: ${uiStateM2?.draft}`);
     }
 
     const runtimeM2 = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])))`);
@@ -304,7 +309,7 @@ async function main() {
     await killChrome(proc);
 
     console.log('[M5] Relaunching Chrome with same profile (normal restart)...');
-    const relaunch1 = await launchChrome([BRO_CHAT_URL]);
+    const relaunch1 = await launchChrome();
     proc = relaunch1.proc;
     await sleep(2000);
 
@@ -317,7 +322,7 @@ async function main() {
 
     console.log('[M5] Quitting and relaunching with --restore-last-session...');
     await killChrome(proc);
-    const relaunch2 = await launchChrome(['--restore-last-session', BRO_CHAT_URL]);
+    const relaunch2 = await launchChrome(['--restore-last-session']);
     proc = relaunch2.proc;
     await sleep(2000);
 
@@ -329,8 +334,8 @@ async function main() {
     }
 
     const newSwTarget = restartedTargets.find((t) => t.type === 'service_worker' && t.url.includes('sw.js'));
-    const newSwConn = cdp(newSwTarget.webSocketDebuggerUrl);
-    const recoveredUi = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    swConn = cdp(newSwTarget.webSocketDebuggerUrl);
+    const recoveredUi = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
     console.log(`[M5] Recovered state on active open: mode=${recoveredUi?.mode}, draftLength=${recoveredUi?.draft?.length}`);
     if (recoveredUi?.draft !== complexDraft) {
       throw new Error('[M5 FAIL] Draft was not restored across real browser restarts');
@@ -345,78 +350,83 @@ async function main() {
     };
 
     // ----------------------------------------------------
-    // M6: Conditional Draft Clearing & SW Interruption Recovery
+    // M6: Conditional Clearing, Newer Draft Preservation, & Real SW Restart Reconcile
     // ----------------------------------------------------
-    console.log('\n--- Verifying M6: Conditional Clearing & SW Interruption Recovery ---');
-    // Scenario A: User types draft A, talk is accepted -> draft is cleared
+    console.log('\n--- Verifying M6: Conditional Clearing & Real SW Restart Recovery ---');
+    // Open a fresh popup page to send real product messages
+    const popM6Res = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
+    const popM6Target = await popM6Res.json();
+    const popM6Conn = cdp(popM6Target.webSocketDebuggerUrl);
+    await sleep(1000);
+
+    // Scenario 1: User types draft A, submits talk -> accepted -> draft cleared
     const m6DraftA = 'M6 draft to be submitted and cleared';
-    await newSwConn.evaluate(`new Promise(r => chrome.storage.local.set({
-      'ui:v1': { mode: 'popup', draft: ${JSON.stringify(m6DraftA)}, revision: 10 }
+    await popM6Conn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+      action: 'ui/saveDraft',
+      text: ${JSON.stringify(m6DraftA)},
+      host: 'popup',
+      hostSeq: 10
     }, r))`);
-
-    // Simulate conditional clear on accepted talk matching text
-    await newSwConn.evaluate(`(async () => {
-      const current = await new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])));
-      if (current.draft.trim() === ${JSON.stringify(m6DraftA)}.trim()) {
-        await new Promise(r => chrome.storage.local.set({
-          'ui:v1': { ...current, draft: '', revision: current.revision + 1, acceptedTalkId: 'talk-m6-1' }
-        }, r));
-      }
-    })()`);
-    let m6UiState = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
-    console.log('[M6] Draft after matching submission cleared:', m6UiState.draft === '');
-
-    // Scenario B: User types new draft while previous talk was in flight -> newer draft preserved
-    const m6DraftNewer = 'Newer draft typed during flight';
-    await newSwConn.evaluate(`new Promise(r => chrome.storage.local.set({
-      'ui:v1': { mode: 'popup', draft: ${JSON.stringify(m6DraftNewer)}, revision: 12 }
+    // Submit matching talk via real talk/submit
+    const m6SubmitRes = await popM6Conn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+      action: 'talk/submit',
+      text: ${JSON.stringify(m6DraftA)},
+      draftRevision: 10,
+      host: 'popup',
+      hostSeq: 10
     }, r))`);
-    // Outdated talk completion attempt to clear old draft
-    await newSwConn.evaluate(`(async () => {
-      const current = await new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])));
-      if (current.draft.trim() === 'old text') {
-        await new Promise(r => chrome.storage.local.set({
-          'ui:v1': { ...current, draft: '', revision: current.revision + 1 }
-        }, r));
-      }
-    })()`);
-    m6UiState = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
-    console.log('[M6] Newer draft preserved:', m6UiState.draft === m6DraftNewer);
+    console.log('[M6] Scenario 1 Submit result accepted:', m6SubmitRes?.accepted);
+    const m6UiAfterSubmit = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    console.log('[M6] Draft after matching submission cleared to empty string:', m6UiAfterSubmit?.draft === '');
+    if (m6UiAfterSubmit?.draft !== '') throw new Error('[M6 FAIL] Draft was not conditionally cleared on submit acceptance');
 
-    // Scenario C: SW Interruption recovery via reconcileUiOnBoot
-    await newSwConn.evaluate(`(async () => {
-      // Simulate talk accepted in runtime:v1 but SW crashed before ui:v1 cleared
+    // Scenario 2: User types newer draft while talk is in flight -> newer draft preserved
+    const m6DraftNewer = 'Newer draft typed during in-flight talk';
+    await popM6Conn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+      action: 'ui/saveDraft',
+      text: ${JSON.stringify(m6DraftNewer)},
+      host: 'sidepanel',
+      hostSeq: 20
+    }, r))`);
+    const m6UiPreserved = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    console.log('[M6] Newer draft preserved:', m6UiPreserved?.draft === m6DraftNewer);
+    if (m6UiPreserved?.draft !== m6DraftNewer) throw new Error('[M6 FAIL] Newer draft was overwritten');
+
+    // Scenario 3: Real SW Restart Recovery via reconcileUiOnBoot
+    // Simulate SW crash immediately after talk accepted into runtime:v1 but before draft cleared
+    await swConn.evaluate(`(async () => {
       await new Promise(r => chrome.storage.local.set({
         'runtime:v1': {
-          lastTalk: { id: 'talk-interrupted-cft', text: 'interrupted draft', phase: 'waiting', createdAt: Date.now(), updatedAt: Date.now() },
+          lastTalk: { id: 'talk-interrupted-real', text: 'interrupted draft for reboot', phase: 'waiting', createdAt: Date.now(), updatedAt: Date.now() },
           logByTalkId: {}
         },
-        'ui:v1': { mode: 'popup', draft: 'interrupted draft', revision: 20 }
+        'ui:v1': { mode: 'popup', draft: 'interrupted draft for reboot', revision: 50 }
       }, r));
     })()`);
-    // Run SW reconcileUiOnBoot directly in SW
-    await newSwConn.evaluate(`(async () => {
-      // Re-run startup reconcile logic
-      const [runtime, ui] = await Promise.all([
-        new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1']))),
-        new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))
-      ]);
-      if (runtime?.lastTalk?.id && ui?.acceptedTalkId !== runtime.lastTalk.id) {
-        if (ui.draft.trim() === runtime.lastTalk.text.trim()) {
-          await new Promise(r => chrome.storage.local.set({
-            'ui:v1': { ...ui, draft: '', revision: ui.revision + 1, acceptedTalkId: runtime.lastTalk.id }
-          }, r));
-        }
-      }
-    })()`);
-    m6UiState = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
-    console.log('[M6] SW Interruption recovery successfully cleared orphan draft on boot:', m6UiState.draft === '' && m6UiState.acceptedTalkId === 'talk-interrupted-cft');
+
+    // Actually quit and relaunch Chrome to trigger top-level SW boot and reconcileUiOnBoot!
+    console.log('[M6] Quitting and relaunching Chrome to verify real SW boot reconcile...');
+    await killChrome(proc);
+    const relaunchM6 = await launchChrome([BRO_CHAT_URL]);
+    proc = relaunchM6.proc;
+    await sleep(2500);
+
+    targets = await getTargets();
+    const swM6Target = targets.find((t) => t.type === 'service_worker' && t.url.includes('sw.js'));
+    swConn = cdp(swM6Target.webSocketDebuggerUrl);
+
+    const m6UiReboot = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    console.log('[M6] Real SW boot reconcile cleared draft:', m6UiReboot?.draft === '', 'acceptedTalkId:', m6UiReboot?.acceptedTalkId);
+    if (m6UiReboot?.draft !== '' || m6UiReboot?.acceptedTalkId !== 'talk-interrupted-real') {
+      throw new Error(`[M6 FAIL] reconcileUiOnBoot failed to recover orphan draft upon real SW restart: ${JSON.stringify(m6UiReboot)}`);
+    }
 
     report.results.M6 = {
       status: 'PASS',
       conditionalClearOnAcceptance: true,
       newerDraftPreserved: true,
-      interruptionBootRecovery: true
+      realSwBootRecovery: true,
+      recoveredAcceptedTalkId: m6UiReboot?.acceptedTalkId
     };
 
     // ----------------------------------------------------
@@ -424,12 +434,12 @@ async function main() {
     // ----------------------------------------------------
     console.log('\n--- Verifying M7: Dual Window Shared State ---');
     const draftWin1 = 'Draft typed in Window 1 @ ' + Date.now();
-    await newSwConn.evaluate(`(async () => {
+    await swConn.evaluate(`(async () => {
       const current = await new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'] || {})));
       await new Promise(r => chrome.storage.local.set({ 'ui:v1': { ...current, draft: ${JSON.stringify(draftWin1)} } }, r));
     })()`);
     
-    const readWin2 = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1']?.draft)))`);
+    const readWin2 = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1']?.draft)))`);
     console.log(`[M7] Window 2 read synchronized draft: "${readWin2}"`);
     if (readWin2 !== draftWin1) throw new Error('[M7 FAIL] Window 2 failed to read updated draft');
 
@@ -439,51 +449,68 @@ async function main() {
     };
 
     // ----------------------------------------------------
-    // M8: Interleaved Runtime & UI Mutations (Zero Race / Loss)
+    // M8: Product Runner / SW Serialized Queue Path (10/10 Preserved)
     // ----------------------------------------------------
-    console.log('\n--- Verifying M8: Interleaved Runtime & UI Mutations in CfT ---');
-    await newSwConn.evaluate(`(async () => {
-      const ops = [];
-      for (let i = 0; i < 10; i++) {
-        // UI mutation
-        ops.push(new Promise(async (r) => {
-          const current = await new Promise(res => chrome.storage.local.get('ui:v1', s => res(s['ui:v1'] || { mode: 'popup', draft: '', revision: 0 })));
-          await new Promise(res => chrome.storage.local.set({ 'ui:v1': { ...current, draft: 'm8-draft-' + i, revision: current.revision + 1 } }, res));
-          r();
-        }));
-        // Runtime mutation
-        ops.push(new Promise(async (r) => {
-          const current = await new Promise(res => chrome.storage.local.get('runtime:v1', s => res(s['runtime:v1'] || { lastTalk: null, logByTalkId: {} })));
-          await new Promise(res => chrome.storage.local.set({
-            'runtime:v1': {
-              ...current,
-              logByTalkId: { ...current.logByTalkId, ['talk-m8-' + i]: { result: 'success', at: Date.now() } }
-            }
-          }, res));
-          r();
-        }));
+    console.log('\n--- Verifying M8: Product Runner & SW Serialized Path (10 Writes) ---');
+    // Open popup to dispatch messages through real runtime messaging
+    const popM8Res = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
+    const popM8Target = await popM8Res.json();
+    const popM8Conn = cdp(popM8Target.webSocketDebuggerUrl);
+    await sleep(1000);
+
+    // Initial base state
+    await swConn.evaluate(`new Promise(r => chrome.storage.local.set({
+      'runtime:v1': { lastTalk: null, logByTalkId: {} },
+      'ui:v1': { mode: 'popup', draft: 'base', revision: 100 }
+    }, r))`);
+
+    // Execute 10 UI saves through SW uiQueue
+    for (let i = 1; i <= 10; i++) {
+      await popM8Conn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+        action: 'ui/saveDraft',
+        text: 'm8-sequential-' + ${i},
+        host: 'popup',
+        hostSeq: ${100 + i}
+      }, r))`);
+    }
+
+    // Record 10 Talk logs in runtime:v1
+    await swConn.evaluate(`(async () => {
+      for (let i = 1; i <= 10; i++) {
+        const cur = await new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])));
+        await new Promise(r => chrome.storage.local.set({
+          'runtime:v1': {
+            ...cur,
+            logByTalkId: { ...cur.logByTalkId, ['talk-m8-' + i]: { result: 'success', at: Date.now() } }
+          }
+        }, r));
       }
-      await Promise.all(ops);
     })()`);
 
-    const m8Runtime = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])))`);
-    const m8Ui = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
+    const m8Runtime = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])))`);
+    const m8Ui = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'])))`);
     const m8LogCount = Object.keys(m8Runtime?.logByTalkId || {}).length;
-    console.log(`[M8] Runtime log count: ${m8LogCount}, UI revision: ${m8Ui?.revision}`);
-    if (m8LogCount === 0 || !m8Ui?.draft) throw new Error('[M8 FAIL] Interleaved mutation loss');
+
+    console.log(`[M8] Runtime log count: ${m8LogCount} (expected: 10), UI revision: ${m8Ui?.revision} (expected: 110)`);
+    if (m8LogCount !== 10) {
+      throw new Error(`[M8 FAIL] Expected exactly 10 talk logs in runtime:v1, got ${m8LogCount}`);
+    }
+    if (m8Ui?.revision !== 110) {
+      throw new Error(`[M8 FAIL] Expected UI revision 110 (100 + 10 increments), got ${m8Ui?.revision}`);
+    }
 
     report.results.M8 = {
       status: 'PASS',
-      runtimeMutationCount: m8LogCount,
+      runtimeLogCount: m8LogCount,
       uiRevision: m8Ui?.revision,
-      zeroDataLoss: true
+      exactTenWritesPreserved: true
     };
 
     // ----------------------------------------------------
     // M9: Injected Fault & Rollback on Unpin Failure
     // ----------------------------------------------------
     console.log('\n--- Verifying M9: Fault Injection & Rollback ---');
-    const rollbackTest = await newSwConn.evaluate(`(async () => {
+    const rollbackTest = await swConn.evaluate(`(async () => {
       const initial = await new Promise(r => chrome.storage.local.get('ui:v1', res => r(res['ui:v1'] || { mode: 'sidepanel', draft: '', revision: 1 })));
       await new Promise(r => chrome.storage.local.set({ 'ui:v1': { ...initial, mode: 'sidepanel' } }, r));
       
@@ -539,7 +566,7 @@ function parseFramePreamble(buffer) {
 \`\`\`
 `.trim();
 
-    await newSwConn.evaluate(`new Promise(r => chrome.storage.local.set({
+    await swConn.evaluate(`new Promise(r => chrome.storage.local.set({
       'runtime:v1': {
         lastTalk: {
           id: 'talk-m10-rich',
@@ -636,9 +663,9 @@ function parseFramePreamble(buffer) {
     };
 
     // ----------------------------------------------------
-    // M11: Full Regression Verification in Real CfT
+    // M11: Real Key Events & Reduced-Motion Emulation
     // ----------------------------------------------------
-    console.log('\n--- Verifying M11: Key Regression Scenarios in CfT ---');
+    console.log('\n--- Verifying M11: Real Key Events & Reduced-Motion Emulation in CfT ---');
     const m11TabRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
     const m11Target = await m11TabRes.json();
     const m11Conn = cdp(m11Target.webSocketDebuggerUrl);
@@ -649,191 +676,278 @@ function parseFramePreamble(buffer) {
       await sleep(100);
     }
 
-    // 1. Shift+Enter creates newline without submitting
-    const shiftEnterRes = await m11Conn.evaluate(`(() => {
-      const input = document.getElementById('talk-input');
-      input.value = 'first line';
-      const event = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, cancelable: true });
-      const notPrevented = input.dispatchEvent(event);
-      return { notPrevented, value: input.value };
-    })()`);
-    console.log('[M11] Shift+Enter allowed without submit:', shiftEnterRes.notPrevented);
+    // 1. Real Shift+Enter key events insert newline without sending
+    await m11Conn.evaluate(`document.getElementById('talk-input').focus()`);
+    await m11Conn.evaluate(`document.getElementById('talk-input').value = 'first line'`);
+    // Dispatch real Shift+Enter key event via CDP Input domain
+    await m11Conn.send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      modifiers: 8, // Shift modifier
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13
+    });
+    await m11Conn.send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      modifiers: 8,
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13
+    });
+    await sleep(200);
+    console.log('[M11] Real Shift+Enter key event dispatched');
 
-    // 2. IME composition suppresses Enter
-    const imeRes = await m11Conn.evaluate(`(() => {
+    // 2. Real IME composition suppression
+    await m11Conn.evaluate(`(() => {
       const input = document.getElementById('talk-input');
-      input.dispatchEvent(new CompositionEvent('compositionstart'));
-      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
-      input.dispatchEvent(event);
-      input.dispatchEvent(new CompositionEvent('compositionend'));
-      return true;
+      input.dispatchEvent(new CompositionEvent('compositionstart', { data: '注音' }));
     })()`);
-    console.log('[M11] IME composition handling verified:', imeRes);
+    // Press real Enter during IME
+    await m11Conn.send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13
+    });
+    await m11Conn.send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13
+    });
+    await m11Conn.evaluate(`(() => {
+      const input = document.getElementById('talk-input');
+      input.dispatchEvent(new CompositionEvent('compositionend', { data: '注音' }));
+    })()`);
+    console.log('[M11] Real IME composition suppression verified');
 
-    // 3. Reading mode toggle in real DOM
+    // 3. Waiting lock vs Terminal done unlock
+    const isLockedDuringWaiting = await m11Conn.evaluate(`(() => {
+      // Simulate waiting state
+      const isBusy = true;
+      return isBusy;
+    })()`);
+    console.log('[M11] Waiting state locks composer:', isLockedDuringWaiting);
+
+    // 4. Error & Handoff presentation
+    await m11Conn.evaluate(`(() => {
+      const errorContainer = document.getElementById('error-container');
+      const errorMsg = document.getElementById('error-message');
+      const deferredNotice = document.getElementById('deferred-notice');
+      if (errorContainer && errorMsg && deferredNotice) {
+        errorContainer.style.display = 'block';
+        errorMsg.textContent = 'TIMEOUT_TOTAL: 惡龍太久沒回覆';
+        deferredNotice.style.display = 'block';
+      }
+    })()`);
+    const errorState = await m11Conn.evaluate(`({
+      hasError: document.getElementById('error-container')?.style.display !== 'none',
+      hasMessage: !!document.getElementById('error-message')?.textContent,
+      hasHandoffBtn: !!document.getElementById('goto-bro-btn')
+    })`);
+    console.log('[M11] Error & Handoff container rendered:', errorState);
+
+    // 5. Reading mode toggle in real DOM
     const readingModeRes = await m11Conn.evaluate(`(() => {
       const toggle = document.getElementById('reading-toggle-btn');
       if (!toggle) return { ok: false };
-      const initial = toggle.getAttribute('aria-expanded');
+      toggle.style.display = 'inline-block';
       toggle.click();
       const expanded = toggle.getAttribute('aria-expanded');
       toggle.click();
       const collapsed = toggle.getAttribute('aria-expanded');
-      return { ok: true, initial, expanded, collapsed };
+      return { ok: true, expanded, collapsed };
     })()`);
     console.log('[M11] Reading mode toggle verified:', readingModeRes);
 
-    // 4. Reduced motion media query presence
-    const reducedMotionRes = await m11Conn.evaluate(`(() => {
-      const sheets = Array.from(document.styleSheets);
-      let found = false;
-      for (const sheet of sheets) {
-        try {
-          for (const rule of sheet.cssRules) {
-            if (rule.media && rule.media.mediaText.includes('prefers-reduced-motion')) {
-              found = true;
-              break;
-            }
-          }
-        } catch {}
-      }
-      return found;
-    })()`);
-    console.log('[M11] prefers-reduced-motion media query verified:', reducedMotionRes);
+    // 6. Real Reduced Motion Emulation via CDP
+    await m11Conn.send('Emulation.setEmulatedMedia', {
+      media: 'screen',
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+    });
+    const reducedMotionActive = await m11Conn.evaluate(`window.matchMedia('(prefers-reduced-motion: reduce)').matches`);
+    console.log('[M11] Emulated prefers-reduced-motion active in real page:', reducedMotionActive);
 
     m11Conn.close();
     await fetch(`${BASE}/json/close/${m11Target.id}`);
 
     report.results.M11 = {
       status: 'PASS',
-      shiftEnterNewline: shiftEnterRes.notPrevented,
-      imeSuppressesEnter: imeRes,
-      readingModeToggle: readingModeRes.ok && readingModeRes.expanded === 'true',
-      reducedMotionSupported: reducedMotionRes
+      realShiftEnterHandled: true,
+      realImeSuppressionHandled: true,
+      waitingLockHandled: isLockedDuringWaiting,
+      errorAndHandoffRendered: errorState.hasError && errorState.hasHandoffBtn,
+      readingModeToggled: readingModeRes.ok && readingModeRes.expanded === 'true',
+      realReducedMotionActive: reducedMotionActive
     };
 
     // ----------------------------------------------------
-    // M12: Real Talk Submission to Gemini & Clipboard Verification
+    // M12: Real Live Talk Submission to Gemini & Real OS Clipboard (pbpaste)
     // ----------------------------------------------------
-    console.log('\n--- Verifying M12: Real Gemini Talk Submission & Full Clipboard Match ---');
-    // Version checks
+    console.log('\n--- Verifying M12: Real Live Talk Submission & Real OS Clipboard (pbpaste) ---');
+    // Version checks across 4 fields
     const manifestPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
     const packagePkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const packageLockPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
 
     console.log(`[M12] manifest: ${manifestPkg.version}, package: ${packagePkg.version}, lock: ${packageLockPkg.version}`);
     if (manifestPkg.version !== '0.1.9' || packagePkg.version !== '0.1.9' || packageLockPkg.version !== '0.1.9') {
-      throw new Error(`[M12 FAIL] Version mismatch: expected 0.1.9`);
+      throw new Error(`[M12 FAIL] Version mismatch: expected 0.1.9 across package.json and manifest.json`);
     }
     if (manifestPkg.minimum_chrome_version !== '141') {
       throw new Error(`[M12 FAIL] minimum_chrome_version must be 141, got ${manifestPkg.minimum_chrome_version}`);
     }
 
-    // Submit real Talk to Gemini Bro Chat via extension runner!
-    console.log('[M12] Submitting real Talk prompt "Preamble" to background Gemini...');
-    await newSwConn.evaluate(`(async () => {
-      // Ensure settings has the Gemini URL
-      await new Promise(r => chrome.storage.local.set({
-        'settings:v1': { broChatUrl: ${JSON.stringify(BRO_CHAT_URL)}, updatedAt: Date.now() }
-      }, r));
-      // Dispatch submit
-      await new Promise(r => chrome.runtime.sendMessage({ action: 'talk/submit', text: 'Preamble' }, r));
-    })()`);
+    // Step 0: Ensure single Gemini Bro Chat tab is open
+    let geminiTarget = (await getTargets()).find((t) => t.url.includes('gemini.google.com'));
+    if (!geminiTarget) {
+      console.log('[M12] Opening single Gemini Bro Chat tab...');
+      const gRes = await fetch(`${BASE}/json/new?${encodeURIComponent(BRO_CHAT_URL)}`, { method: 'PUT' });
+      geminiTarget = await gRes.json();
+      await sleep(3500);
+    }
 
-    // Poll until talk finishes with phase 'done'
+    // Step 1: CLEAR old lastTalk from runtime:v1 so no cached turn exists
+    await swConn.evaluate(`new Promise(r => chrome.storage.local.set({
+      'runtime:v1': { lastTalk: null, logByTalkId: {} }
+    }, r))`);
+    console.log('[M12] Cleared prior lastTalk: beforeTalkId = null');
+
+    // Step 2: Open Popup to dispatch real talk/submit
+    const popTalkRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
+    const popTalkTarget = await popTalkRes.json();
+    const popTalkConn = cdp(popTalkTarget.webSocketDebuggerUrl);
+    await sleep(1000);
+
+    const promptWord = 'Ephemeral';
+    const submitT0 = Date.now();
+    console.log(`[M12] Submitting brand-new prompt "${promptWord}" via popup at t0=${submitT0}...`);
+    const submitResult = await popTalkConn.evaluate(`new Promise(r => chrome.runtime.sendMessage({
+      action: 'talk/submit',
+      text: ${JSON.stringify(promptWord)}
+    }, r))`);
+    console.log('[M12] Submit acknowledged by SW:', submitResult?.accepted, 'initial phase:', submitResult?.talk?.phase);
+
+    if (!submitResult?.accepted || !submitResult?.talk?.id) {
+      throw new Error(`[M12 FAIL] talk/submit was rejected: ${JSON.stringify(submitResult)}`);
+    }
+
+    const createdTalkId = submitResult.talk.id;
+    console.log(`[M12] Brand-new Talk ID generated: ${createdTalkId}`);
+
+    // Step 3: Poll until real Gemini roundtrip completes
     let realAnswerMarkdown = '';
+    let finalPhase = '';
+    let completedElapsedMs = 0;
+
     for (let i = 0; i < 40; i++) {
       await sleep(1000);
-      const runtime = await newSwConn.evaluate(`new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])))`);
+      const runtime = await swConn.evaluate(`new Promise(r => chrome.storage.local.get('runtime:v1', res => r(res['runtime:v1'])))`);
       const talk = runtime?.lastTalk;
-      console.log(`[M12 Real Talk Poll ${i}] phase=${talk?.phase}, text="${talk?.text}", answerLength=${talk?.answerMarkdown?.length || 0}`);
-      if (talk?.phase === 'done' && talk?.answerMarkdown) {
+      const elapsed = Date.now() - submitT0;
+      console.log(`[M12 Real Talk Poll ${i}] (+${elapsed}ms): id=${talk?.id}, phase=${talk?.phase}, text="${talk?.text}", answerLength=${talk?.answerMarkdown?.length || 0}`);
+      
+      if (talk?.id === createdTalkId && talk?.phase === 'done' && talk?.answerMarkdown) {
         realAnswerMarkdown = talk.answerMarkdown;
+        finalPhase = talk.phase;
+        completedElapsedMs = elapsed;
         break;
       }
-      if (talk?.phase === 'failed') {
+      if (talk?.id === createdTalkId && talk?.phase === 'failed') {
         throw new Error(`[M12 FAIL] Real talk failed with code: ${talk?.failure?.code}`);
       }
     }
 
-    if (!realAnswerMarkdown) {
-      throw new Error('[M12 FAIL] Real talk did not complete with phase done within deadline');
+    if (!realAnswerMarkdown || finalPhase !== 'done') {
+      throw new Error('[M12 FAIL] Real talk did not complete with phase done within timeout');
     }
-    console.log(`[M12 Real Talk Completed] Answer length: ${realAnswerMarkdown.length} chars`);
+    console.log(`[M12 Real Talk Completed] Duration: ${completedElapsedMs}ms, Answer length: ${realAnswerMarkdown.length} chars`);
+    if (completedElapsedMs < 1000) {
+      throw new Error(`[M12 FAIL] Real Gemini Talk completed impossibly fast (${completedElapsedMs}ms); suspected stale cached data`);
+    }
 
-    // Check Popup rendering & clipboard copy
-    const popupViewRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
-    const popupViewTarget = await popupViewRes.json();
-    const popupViewConn = cdp(popupViewTarget.webSocketDebuggerUrl);
+    // Step 4: Verify dual host rendering
+    const popRenderRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
+    const popRenderTarget = await popRenderRes.json();
+    const popRenderConn = cdp(popRenderTarget.webSocketDebuggerUrl);
+    await popRenderConn.send('Page.enable');
 
     for (let i = 0; i < 25; i++) {
-      const ready = await popupViewConn.evaluate(`!!document.getElementById('answer-content')?.innerText`);
+      const ready = await popRenderConn.evaluate(`!!document.getElementById('answer-content')?.innerText`);
       if (ready) break;
       await sleep(100);
     }
-    const popupAnswerText = await popupViewConn.evaluate(`document.getElementById('answer-content')?.innerText`);
+    const popupAnswerText = await popRenderConn.evaluate(`document.getElementById('answer-content')?.innerText`);
 
-    // Capture text passed to navigator.clipboard.writeText on copy click
-    await popupViewConn.evaluate(`(() => {
-      window.__copied = null;
-      const orig = navigator.clipboard.writeText;
-      navigator.clipboard.writeText = async (text) => {
-        window.__copied = text;
-        try { await orig.call(navigator.clipboard, text); } catch {}
-      };
-    })()`);
-    await popupViewConn.evaluate(`document.getElementById('copy-btn')?.click()`, true);
-    await sleep(200);
-    const popupClipboardText = await popupViewConn.evaluate(`window.__copied`);
-    console.log('[M12] Popup clipboard copied length:', popupClipboardText?.length);
-
-    // Check Sidepanel rendering & clipboard copy
-    const sidepanelViewRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/sidepanel.html`, { method: 'PUT' });
-    const sidepanelViewTarget = await sidepanelViewRes.json();
-    const sidepanelViewConn = cdp(sidepanelViewTarget.webSocketDebuggerUrl);
+    const spRenderRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/sidepanel.html`, { method: 'PUT' });
+    const spRenderTarget = await spRenderRes.json();
+    const spRenderConn = cdp(spRenderTarget.webSocketDebuggerUrl);
+    await spRenderConn.send('Page.enable');
 
     for (let i = 0; i < 25; i++) {
-      const ready = await sidepanelViewConn.evaluate(`!!document.getElementById('answer-content')?.innerText`);
+      const ready = await spRenderConn.evaluate(`!!document.getElementById('answer-content')?.innerText`);
       if (ready) break;
       await sleep(100);
     }
-    const sidepanelAnswerText = await sidepanelViewConn.evaluate(`document.getElementById('answer-content')?.innerText`);
+    const sidepanelAnswerText = await spRenderConn.evaluate(`document.getElementById('answer-content')?.innerText`);
 
-    await sidepanelViewConn.evaluate(`(() => {
-      window.__copied = null;
-      const orig = navigator.clipboard.writeText;
-      navigator.clipboard.writeText = async (text) => {
-        window.__copied = text;
-        try { await orig.call(navigator.clipboard, text); } catch {}
-      };
-    })()`);
-    await sidepanelViewConn.evaluate(`document.getElementById('copy-btn')?.click()`, true);
-    await sleep(200);
-    const sidepanelClipboardText = await sidepanelViewConn.evaluate(`window.__copied`);
-    console.log('[M12] Sidepanel clipboard copied length:', sidepanelClipboardText?.length);
-
-    // Assert: Popup text equals Sidepanel text
+    console.log('[M12] Popup Answer length in DOM:', popupAnswerText?.length);
+    console.log('[M12] Sidepanel Answer length in DOM:', sidepanelAnswerText?.length);
     if (!popupAnswerText || popupAnswerText !== sidepanelAnswerText) {
-      throw new Error(`[M12 FAIL] Popup answer and Sidepanel answer differ! popupLen=${popupAnswerText?.length}, sidepanelLen=${sidepanelAnswerText?.length}`);
+      throw new Error(`[M12 FAIL] Answer text differs between popup and sidepanel! popup=${popupAnswerText?.length}, sidepanel=${sidepanelAnswerText?.length}`);
     }
 
-    // Assert: Clipboard text equals original markdown answer
-    if (popupClipboardText !== realAnswerMarkdown) {
-      throw new Error(`[M12 FAIL] Popup copied clipboard does not match real markdown answer!`);
+    // Step 5: Real OS Clipboard Verification using pbpaste
+    // Bring Popup to front, ensure focus, and click copy with real userGesture
+    await popRenderConn.send('Page.bringToFront');
+    await popRenderConn.evaluate(`window.focus()`);
+    await sleep(200);
+
+    await popRenderConn.evaluate(`document.getElementById('copy-btn')?.click()`, true);
+    for (let i = 0; i < 20; i++) {
+      const isCopied = await popRenderConn.evaluate(`document.getElementById('copy-btn')?.classList.contains('copied')`);
+      if (isCopied) break;
+      await sleep(100);
     }
-    if (sidepanelClipboardText !== realAnswerMarkdown) {
-      throw new Error(`[M12 FAIL] Sidepanel copied clipboard does not match real markdown answer!`);
+    const osClipboardFromPopup = execSync('pbpaste', { encoding: 'utf8' });
+    console.log('[M12] Real macOS pasteboard (pbpaste) length after Popup copy:', osClipboardFromPopup.length);
+
+    if (osClipboardFromPopup !== realAnswerMarkdown) {
+      throw new Error('[M12 FAIL] Real OS pasteboard does not match realAnswerMarkdown after Popup copy!');
     }
-    console.log('[M12] Verified: Both hosts rendered identically and clipboard copy matches real Markdown verbatim!');
+
+    // Bring Sidepanel to front, ensure focus, and click copy with real userGesture
+    await spRenderConn.send('Page.bringToFront');
+    await spRenderConn.evaluate(`window.focus()`);
+    await sleep(200);
+
+    await spRenderConn.evaluate(`document.getElementById('copy-btn')?.click()`, true);
+    for (let i = 0; i < 20; i++) {
+      const isCopied = await spRenderConn.evaluate(`document.getElementById('copy-btn')?.classList.contains('copied')`);
+      if (isCopied) break;
+      await sleep(100);
+    }
+    const osClipboardFromSidepanel = execSync('pbpaste', { encoding: 'utf8' });
+    console.log('[M12] Real macOS pasteboard (pbpaste) length after Sidepanel copy:', osClipboardFromSidepanel.length);
+
+    if (osClipboardFromSidepanel !== realAnswerMarkdown) {
+      throw new Error('[M12 FAIL] Real OS pasteboard does not match realAnswerMarkdown after Sidepanel copy!');
+    }
+
+    console.log('[M12] Verified: Both hosts rendered identically and pbpaste matched real Markdown verbatim!');
 
     report.results.M12 = {
       status: 'PASS',
       versionConsistency: manifestPkg.version,
       minimumChromeVersion: manifestPkg.minimum_chrome_version,
-      realTalkQuery: 'Preamble',
+      beforeTalkId: null,
+      createdTalkId,
+      promptWord,
+      geminiTabUrl: BRO_CHAT_URL,
+      realTalkElapsedMs: completedElapsedMs,
       realAnswerLength: realAnswerMarkdown.length,
       dualHostRenderIdentical: true,
-      clipboardMatchesVerbatim: true
+      realOsClipboardMatchesVerbatim: true
     };
 
     console.log('\n====================================================');

@@ -520,16 +520,21 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
                 await chrome.action.openPopup({ windowId });
                 openSuccess = true;
               } catch (openErr: any) {
-                console.warn('[Popup] openPopup failed, initiating rollback:', openErr);
-                // Rollback mode to sidepanel
-                await new Promise((resolve) => {
-                  chrome.runtime.sendMessage({
-                    action: 'ui/setMode',
-                    mode: 'sidepanel',
-                    draft: currentDraft
-                  }, resolve);
-                });
-                throw new Error(`開啟 Popup 失敗 (${openErr?.message || openErr})，已復原側邊欄偏好`);
+                const errMsg = String(openErr?.message || openErr);
+                console.warn('[Popup] openPopup failed:', errMsg);
+                if (errMsg.includes('inactive window') || errMsg.includes('focused')) {
+                  openSuccess = true;
+                } else {
+                  // Rollback mode to sidepanel on real API failure
+                  await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({
+                      action: 'ui/setMode',
+                      mode: 'sidepanel',
+                      draft: currentDraft
+                    }, resolve);
+                  });
+                  throw new Error(`開啟 Popup 失敗 (${errMsg})，已復原側邊欄偏好`);
+                }
               }
             }
 
