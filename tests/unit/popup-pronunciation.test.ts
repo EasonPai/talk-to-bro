@@ -431,7 +431,7 @@ test('M6: initially empty voice list with delayed voiceschanged resolves English
 
   // Voices finish loading asynchronously
   currentVoices = [{ lang: 'en-US', name: 'Samantha', default: true }];
-  voicesListener!();
+  (voicesListener as any)();
 
   assert.equal(spokenText, 'delayedWord', 'Should speak after voiceschanged fires with English voice');
 });
