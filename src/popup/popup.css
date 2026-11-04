@@ -572,3 +572,36 @@ html[data-host="sidepanel"] .answer-content table {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* T-2: Word Pronunciation (Speech Synthesis) */
+.speakable-word {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.speakable-word:hover {
+  background-color: rgba(66, 133, 244, 0.12);
+  text-decoration: underline;
+  text-decoration-color: rgba(66, 133, 244, 0.45);
+  text-underline-offset: 2px;
+}
+
+.speech-toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(32, 33, 36, 0.92);
+  color: #f1f3f4;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.2s ease;
+  max-width: 85%;
+  text-align: center;
+}

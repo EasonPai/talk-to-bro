@@ -1,6 +1,6 @@
 {
   "name": "talk-to-bro-personally",
-  "version": "0.1.9",
+  "version": "0.1.11",
   "description": "Chrome MV3 Extension for Talk To Bro Personally",
   "type": "module",
   "engines": {
@@ -14,7 +14,8 @@
     "verify:m3": "node scripts/test-m3-suite.js",
     "verify:m4": "node scripts/test-m4-suite.js",
     "verify:m5": "node scripts/test-m5-suite.js",
-    "verify:popup-shell": "node scripts/verify-popup-shell.mjs"
+    "verify:popup-shell": "node scripts/verify-popup-shell.mjs",
+    "verify:t2": "node scripts/verify-t2-cft.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.306",
