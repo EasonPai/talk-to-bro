@@ -4,6 +4,27 @@ import DOMPurify from 'dompurify';
 import type { Talk } from '../shared/types.ts';
 import { followActiveTabZoom, applyPopupLayout } from './zoom.ts';
 import { sendViewOf, hudOf, formatSentTime, failureViewOf, previousSummaryOf, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, type PreviousSummary } from './view-state.ts';
+import { wrapSpeakableWords, initPronunciation, speakWord } from './pronunciation.ts';
+export { wrapSpeakableWords, initPronunciation, speakWord };
+
+let speechToastTimer: any = null;
+export function showSpeechToast(message: string): void {
+  const toast = document.getElementById('speech-toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.style.display = 'block';
+  toast.style.opacity = '1';
+  if (speechToastTimer !== null) {
+    clearTimeout(speechToastTimer);
+  }
+  speechToastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => {
+      toast.style.display = 'none';
+    }, 200);
+    speechToastTimer = null;
+  }, 2200);
+}
 
 // Configure marked with GFM support
 marked.setOptions({
@@ -389,6 +410,9 @@ export function renderTalkState(talk: Talk | null) {
           a.setAttribute('rel', 'noopener noreferrer');
         });
 
+        // T-2: Wrap speakable English words
+        wrapSpeakableWords(answerContent);
+
         answerContainer.style.display = 'flex';
       }
       break;
@@ -460,12 +484,13 @@ export function renderTalkState(talk: Talk | null) {
 /**
  * Top-level initialization with robust Error Boundary.
  */
-if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-  document.addEventListener('DOMContentLoaded', async () => {
+export async function initPopup(): Promise<void> {
   try {
     const isSidepanel = typeof window !== 'undefined' &&
-      (window.location.pathname.includes('sidepanel') || document.location.pathname.endsWith('sidepanel.html'));
-    document.documentElement.setAttribute('data-host', isSidepanel ? 'sidepanel' : 'popup');
+      (window.location?.pathname?.includes('sidepanel') || document.location?.pathname?.endsWith('sidepanel.html') || false);
+    if (typeof document.documentElement?.setAttribute === 'function') {
+      document.documentElement.setAttribute('data-host', isSidepanel ? 'sidepanel' : 'popup');
+    }
 
     if (!isSidepanel) {
       followActiveTabZoom(document.documentElement, () => updateReadingModeUI()).catch(() => {});
@@ -477,6 +502,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     const readingToggleBtn = document.getElementById('reading-toggle-btn') as HTMLButtonElement | null;
     const pinBtn = document.getElementById('pin-toggle-btn') as HTMLButtonElement | null;
     const pinText = document.getElementById('pin-toggle-text');
+    const answerContent = document.getElementById('answer-content') as HTMLDivElement | null;
 
     let isComposing = false;
     let hostSeq = 0;
@@ -696,6 +722,10 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       });
     }
 
+    if (answerContent) {
+      initPronunciation(answerContent, { showToast: showSpeechToast });
+    }
+
     // Read current state from storage
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       const [resRuntime, resUi] = await Promise.all([
@@ -756,5 +786,14 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       if (msg) msg.textContent = '無法讀取本機狀態，請稍後重試。';
     }
   }
-});
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      initPopup().catch((e) => console.error('[Popup] init error:', e));
+    });
+  } else {
+    initPopup().catch((e) => console.error('[Popup] init error:', e));
+  }
 }

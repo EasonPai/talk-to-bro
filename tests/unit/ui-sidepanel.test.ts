@@ -14,7 +14,8 @@ test('T-1: dist build contains dual hosts and manifest with sidePanel (M12)', ()
   assert.ok(fs.existsSync(distManifestPath), 'dist/manifest.json must exist');
 
   const manifest = JSON.parse(fs.readFileSync(distManifestPath, 'utf8'));
-  assert.equal(manifest.version, '0.1.9', 'Version must be 0.1.9');
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  assert.equal(manifest.version, pkg.version, `Manifest version must match package.json (${pkg.version})`);
   assert.equal(manifest.minimum_chrome_version, '141', 'Minimum Chrome must be 141');
   assert.ok(manifest.permissions.includes('sidePanel'), 'Must declare sidePanel permission');
   assert.equal(manifest.side_panel?.default_path, 'sidepanel.html', 'side_panel.default_path must be sidepanel.html');
