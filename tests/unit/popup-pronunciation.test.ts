@@ -364,7 +364,7 @@ test('M5: rapid consecutive clicks cancel previous utterance and do not report c
 });
 
 // ----------------------------------------------------
-// M6: Error Toasts & Graceful Degradation
+// M6: Error Toasts & Graceful Degradation (including delayed voice loading)
 // ----------------------------------------------------
 test('M6: missing API or missing English voice emits non-blocking toast', () => {
   let toastMsg: string | null = null;
@@ -403,6 +403,97 @@ test('M6: missing API or missing English voice emits non-blocking toast', () => 
   });
   capturedUtt.onerror?.({ error: 'audio-busy' });
   assert.equal(toastMsg, '語音播放失敗');
+});
+
+test('M6: initially empty voice list with delayed voiceschanged resolves English voice and speaks', () => {
+  let spokenText: string | null = null;
+  let voicesListener: Function | null = null;
+
+  let currentVoices: any[] = [];
+  const mockAsyncSynth = {
+    cancel: () => {},
+    getVoices: () => currentVoices,
+    addEventListener: (evt: string, fn: Function) => {
+      if (evt === 'voiceschanged') voicesListener = fn;
+    },
+    removeEventListener: () => {},
+    speak: (utt: any) => { spokenText = utt.text; }
+  };
+
+  // Initially empty getVoices()
+  speakWord('delayedWord', {
+    speechSynthesis: mockAsyncSynth as any,
+    voiceTimeoutMs: 500
+  });
+
+  assert.equal(spokenText, null, 'Should not speak while voices are empty');
+  assert.ok(typeof voicesListener === 'function', 'voiceschanged listener must be installed');
+
+  // Voices finish loading asynchronously
+  currentVoices = [{ lang: 'en-US', name: 'Samantha', default: true }];
+  voicesListener!();
+
+  assert.equal(spokenText, 'delayedWord', 'Should speak after voiceschanged fires with English voice');
+});
+
+test('M6: persistently empty voices trigger bounded failure toast after timeout', async () => {
+  let toastMsg: string | null = null;
+  let speakCalled = false;
+
+  const mockEmptySynth = {
+    cancel: () => {},
+    getVoices: () => [],
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    speak: () => { speakCalled = true; }
+  };
+
+  speakWord('emptyVoiceWord', {
+    speechSynthesis: mockEmptySynth as any,
+    voiceTimeoutMs: 50,
+    showToast: (msg) => { toastMsg = msg; }
+  });
+
+  // Wait for bounded timeout to elapse
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  assert.equal(speakCalled, false, 'Must not speak when voices are persistently empty');
+  assert.equal(toastMsg, '找不到可用的英文語音', 'Must notify user with toast when voices are persistently empty');
+});
+
+test('M6: rapid click during async voice loading preserves newest-click token', () => {
+  let spokenWords: string[] = [];
+  let voicesListeners: Function[] = [];
+
+  let currentVoices: any[] = [];
+  const mockAsyncSynth = {
+    cancel: () => {},
+    getVoices: () => currentVoices,
+    addEventListener: (evt: string, fn: Function) => {
+      if (evt === 'voiceschanged') voicesListeners.push(fn);
+    },
+    removeEventListener: () => {},
+    speak: (utt: any) => { spokenWords.push(utt.text); }
+  };
+
+  // Click 1: 'firstWord'
+  speakWord('firstWord', {
+    speechSynthesis: mockAsyncSynth as any,
+    voiceTimeoutMs: 500
+  });
+
+  // Click 2: 'secondWord'
+  speakWord('secondWord', {
+    speechSynthesis: mockAsyncSynth as any,
+    voiceTimeoutMs: 500
+  });
+
+  // Now voices load
+  currentVoices = [{ lang: 'en-US', name: 'Samantha', default: true }];
+  for (const fn of voicesListeners) fn();
+
+  // Only secondWord must be spoken
+  assert.deepEqual(spokenWords, ['secondWord'], 'Only newest-clicked word should be spoken when voices load');
 });
 
 // ----------------------------------------------------

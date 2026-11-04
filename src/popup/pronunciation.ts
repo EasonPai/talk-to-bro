@@ -29,6 +29,20 @@ export function isSpeakableWord(word: string): boolean {
 }
 
 /**
+ * Resolves an English voice from the available voice list.
+ * Priority: en-US default voice -> en-US voice -> any en-* voice -> null.
+ */
+export function findEnglishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (!voices || voices.length === 0) return null;
+  return (
+    voices.find((v) => (v.lang === 'en-US' || v.lang === 'en_US') && v.default) ||
+    voices.find((v) => v.lang === 'en-US' || v.lang === 'en_US') ||
+    voices.find((v) => v.lang?.toLowerCase().startsWith('en')) ||
+    null
+  );
+}
+
+/**
  * Traverses text nodes within container, excluding links, code blocks, buttons,
  * and wraps speakable English words in <span class="speakable-word" data-word="...">.
  * Uses only standard DOM APIs (no HTML string concatenation).
@@ -134,51 +148,22 @@ let activePlayToken = 0;
 export interface SpeechPlayerOptions {
   showToast?: (message: string) => void;
   speechSynthesis?: SpeechSynthesis;
+  voiceTimeoutMs?: number;
 }
 
-/**
- * Plays English pronunciation using Web Speech API (SpeechSynthesis).
- * Cancels any active utterance before playing new word.
- * Distinguishes old cancelled utterances from genuine errors.
- */
-export function speakWord(word: string, options: SpeechPlayerOptions = {}): void {
-  const synth = options.speechSynthesis || (typeof window !== 'undefined' ? window.speechSynthesis : undefined);
-  const showToast = options.showToast || ((msg: string) => console.warn('[Pronunciation]', msg));
-
-  if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
-    showToast('瀏覽器未支援語音播放');
-    return;
-  }
-
-  const token = ++activePlayToken;
-
-  try {
-    synth.cancel();
-  } catch (e) {
-    console.warn('[Pronunciation] synth.cancel error:', e);
-  }
-
-  const voices = synth.getVoices?.() || [];
-  let selectedVoice: SpeechSynthesisVoice | null = null;
-
-  if (voices.length > 0) {
-    selectedVoice = voices.find(v => (v.lang === 'en-US' || v.lang === 'en_US') && v.default)
-      || voices.find(v => v.lang === 'en-US' || v.lang === 'en_US')
-      || voices.find(v => v.lang.toLowerCase().startsWith('en'))
-      || null;
-
-    if (!selectedVoice) {
-      showToast('找不到可用的英文語音');
-      return;
-    }
-  }
-
+function dispatchUtterance(
+  synth: SpeechSynthesis,
+  word: string,
+  voice: SpeechSynthesisVoice | null,
+  token: number,
+  showToast: (msg: string) => void
+): void {
   try {
     const utt = new SpeechSynthesisUtterance(word);
     utt.lang = 'en-US';
     utt.rate = 1.0;
-    if (selectedVoice) {
-      utt.voice = selectedVoice;
+    if (voice) {
+      utt.voice = voice;
     }
 
     utt.onerror = (e: SpeechSynthesisErrorEvent) => {
@@ -194,6 +179,94 @@ export function speakWord(word: string, options: SpeechPlayerOptions = {}): void
     console.error('[Pronunciation] speak failed:', err);
     showToast('語音播放失敗');
   }
+}
+
+/**
+ * Plays English pronunciation using Web Speech API (SpeechSynthesis).
+ * Cancels any active utterance before playing new word.
+ * Distinguishes old cancelled utterances from genuine errors.
+ * Handles delayed asynchronous voice loading and bounded timeout when voices are empty.
+ */
+export function speakWord(word: string, options: SpeechPlayerOptions = {}): void {
+  const synth = options.speechSynthesis || (typeof window !== 'undefined' ? window.speechSynthesis : undefined);
+  const showToast = options.showToast || ((msg: string) => console.warn('[Pronunciation]', msg));
+  const voiceTimeoutMs = typeof options.voiceTimeoutMs === 'number' ? options.voiceTimeoutMs : 1000;
+
+  if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+    showToast('瀏覽器未支援語音播放');
+    return;
+  }
+
+  const token = ++activePlayToken;
+
+  try {
+    synth.cancel();
+  } catch (e) {
+    console.warn('[Pronunciation] synth.cancel error:', e);
+  }
+
+  const immediateVoices = synth.getVoices?.() || [];
+
+  if (immediateVoices.length > 0) {
+    const voice = findEnglishVoice(immediateVoices);
+    if (!voice) {
+      showToast('找不到可用的英文語音');
+      return;
+    }
+    dispatchUtterance(synth, word, voice, token, showToast);
+    return;
+  }
+
+  // Voices list is initially empty. Wait for voiceschanged with bounded timeout.
+  let resolved = false;
+  let timeoutId: any = null;
+
+  const cleanup = () => {
+    resolved = true;
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (typeof synth.removeEventListener === 'function') {
+      synth.removeEventListener('voiceschanged', onVoicesChanged);
+    } else if (synth.onvoiceschanged === onVoicesChanged) {
+      synth.onvoiceschanged = null;
+    }
+  };
+
+  const onVoicesChanged = () => {
+    if (resolved) return;
+    cleanup();
+    if (token !== activePlayToken) return; // Newest-click priority preserved
+
+    const loadedVoices = synth.getVoices?.() || [];
+    const voice = findEnglishVoice(loadedVoices);
+    if (!voice) {
+      showToast('找不到可用的英文語音');
+      return;
+    }
+    dispatchUtterance(synth, word, voice, token, showToast);
+  };
+
+  if (typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', onVoicesChanged);
+  } else {
+    synth.onvoiceschanged = onVoicesChanged;
+  }
+
+  timeoutId = setTimeout(() => {
+    if (resolved) return;
+    cleanup();
+    if (token !== activePlayToken) return; // Newest-click priority preserved
+
+    const finalVoices = synth.getVoices?.() || [];
+    const voice = findEnglishVoice(finalVoices);
+    if (!voice) {
+      showToast('找不到可用的英文語音');
+      return;
+    }
+    dispatchUtterance(synth, word, voice, token, showToast);
+  }, voiceTimeoutMs);
 }
 
 export interface PronunciationDelegateOptions {
@@ -223,6 +296,7 @@ export function initPronunciation(
   };
 
   const onClick = (e: MouseEvent) => {
+    // 1. Check if user is dragging or making a selection
     if (hasPointerDown) {
       const dragDistance = Math.hypot(e.clientX - pointerStartX, e.clientY - pointerStartY);
       hasPointerDown = false;
