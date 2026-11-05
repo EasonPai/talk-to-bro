@@ -126,7 +126,7 @@ async function main() {
   const geminiConn = cdp(geminiTarget.webSocketDebuggerUrl);
 
   const report = {
-    gitRevision: '7ece5ed',
+    gitRevision: 'f8bd796',
     bundleSha256: servedSha256,
     extensionVersion: manifestVersion,
     cdpPort: PORT,
@@ -173,6 +173,7 @@ async function main() {
             ed.dispatchEvent(new Event('input', { bubbles: true }));
           })(${JSON.stringify(initialDraft)})`);
           console.log(`[Setup] Set pre-existing draft: "${initialDraft}"`);
+          await sleep(200);
         } else {
           await geminiConn.evaluate(`(() => {
             const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]');
