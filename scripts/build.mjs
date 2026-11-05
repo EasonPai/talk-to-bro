@@ -30,8 +30,9 @@ async function build() {
     minify: false
   });
 
-  // 2. Adapter (IIFE for isolated world injection with dynamic build ID)
-  const adapterBuildId = `ttb-build-${Date.now()}`;
+  // 2. Adapter (IIFE for isolated world injection with deterministic build ID)
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf-8'));
+  const adapterBuildId = process.env.TTB_BUILD_ID || `ttb-build-${pkgJson.version}`;
   await esbuild.build({
     entryPoints: [path.join(SRC_DIR, 'adapter/entry.ts')],
     outfile: path.join(DIST_DIR, 'adapter.js'),

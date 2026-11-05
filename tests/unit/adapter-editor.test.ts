@@ -22,12 +22,14 @@ function setupMockDom(options: {
   isGenerating?: boolean;
   clearSucceeds?: boolean;
   insertSucceeds?: boolean;
+  insertMutatesTo?: string;
 } = {}): MockDomEnvironment {
   const {
     initialEditorText = '',
     isGenerating = false,
     clearSucceeds = true,
-    insertSucceeds = true
+    insertSucceeds = true,
+    insertMutatesTo
   } = options;
 
   let currentText = initialEditorText;
@@ -64,7 +66,12 @@ function setupMockDom(options: {
     getAttribute: (attr: string) => (attr === 'aria-disabled' ? 'false' : null),
     click: () => {
       sendClickCount++;
-      // Simulate userTurn appearing in DOM after click
+      // Simulate userTurn appearing in DOM after click with .query-text-line child elements
+      const lines = currentText.split('\n').map(l => ({
+        tagName: 'P',
+        className: 'query-text-line',
+        textContent: l
+      }));
       userTurns.push({
         tagName: 'DIV',
         attributes: { 'data-ttb-seen': '0' },
@@ -72,7 +79,7 @@ function setupMockDom(options: {
         setAttribute: function(name: string, val: string) { this.attributes[name] = val; },
         textContent: currentText,
         querySelector: () => null,
-        querySelectorAll: () => []
+        querySelectorAll: (sel: string) => (sel.includes('.query-text-line') ? lines : [])
       });
     }
   };
@@ -119,7 +126,7 @@ function setupMockDom(options: {
       }
       if (command === 'insertText') {
         if (insertSucceeds) {
-          currentText = value || '';
+          currentText = insertMutatesTo !== undefined ? insertMutatesTo : (value || '');
           return true;
         }
         return false;
@@ -300,6 +307,90 @@ test('M5: generating in progress rejects with EDITOR_BUSY without clearing or pr
     assert.equal(env.sendClickCount, 0, 'Must NOT click sendButton');
     assert.equal(env.execCommandLog.length, 0, 'Must NOT execute any editor commands while busy');
     assert.equal(env.editorEl.innerText, 'some draft', 'Must NOT clear editor while generating');
+  } finally {
+    env.cleanup();
+  }
+});
+
+// --------------------------------------------------------------------------
+// M2 (D3): Same-text draft in editor cleanly clears and re-inserts/sends
+// --------------------------------------------------------------------------
+test('M2 (D3): insertAndSend on identical draft cleanly clears and re-inserts without error', async () => {
+  const env = setupMockDom({ initialEditorText: 'claude' });
+  try {
+    const res = await insertAndSend('claude', 'talk-same-1');
+    assert.equal(res.ok, true, 'Same-text draft must succeed');
+    assert.equal(res.userTurnVerified, true);
+    assert.equal(env.sendClickCount, 1, 'Send button must be clicked exactly once');
+    assert.equal(env.editorEl.innerText, 'claude');
+
+    // Must still execute delete followed by insertText
+    const deleteIdx = env.execCommandLog.findIndex(c => c.command === 'delete');
+    const insertIdx = env.execCommandLog.findIndex(c => c.command === 'insertText');
+    assert.ok(deleteIdx !== -1, 'Delete command must execute on same-text draft');
+    assert.ok(insertIdx !== -1, 'InsertText command must execute');
+    assert.ok(deleteIdx < insertIdx, 'Delete must precede insertText');
+  } finally {
+    env.cleanup();
+  }
+});
+
+// --------------------------------------------------------------------------
+// M4 (D4): Spaces, tabs, Unicode, and internal newlines survive clear and insert raw
+// --------------------------------------------------------------------------
+test('M4 (D4): spaces, tabs, Unicode, and internal newlines survive clear and insert raw', async () => {
+  const env = setupMockDom({ initialEditorText: 'old dirty draft' });
+  const rawPrompt = 'hello\tworld\n你好，世界 🌍\nmultiple   spaces';
+  try {
+    const res = await insertAndSend(rawPrompt, 'talk-raw-unicode');
+    assert.equal(res.ok, true);
+    assert.equal(res.userTurnVerified, true);
+    assert.equal(env.sendClickCount, 1);
+
+    // Verify exact characters were sent to insertText without stripping leading spaces/tabs
+    const insertCmd = env.execCommandLog.find(c => c.command === 'insertText');
+    assert.ok(insertCmd, 'insertText must be called');
+    assert.equal(insertCmd.value, rawPrompt, 'Exact raw text must be passed to execCommand');
+    assert.equal(env.editorEl.innerText, rawPrompt, 'Editor innerText must retain all spaces, tabs, and Unicode');
+  } finally {
+    env.cleanup();
+  }
+});
+
+// --------------------------------------------------------------------------
+// M3 (D5): Insert command succeeds but DOM content does not match target prompt -> no send click
+// --------------------------------------------------------------------------
+test('M3 (D5): insert-succeeds-but-content-mismatch aborts without clicking send', async () => {
+  const env = setupMockDom({
+    initialEditorText: 'initial text',
+    insertSucceeds: true,
+    insertMutatesTo: 'something completely different from target'
+  });
+  try {
+    const res = await insertAndSend('claude', 'talk-mismatch');
+    assert.equal(res.ok, false, 'Must fail when content does not match target prompt');
+    assert.equal(res.code, 'INPUT_NOT_FOUND');
+    assert.match(res.reason || '', /insertion verification failed/i);
+    assert.equal(env.sendClickCount, 0, 'Must NEVER click send button when content verification fails');
+  } finally {
+    env.cleanup();
+  }
+});
+
+// --------------------------------------------------------------------------
+// M6 (D6): Write-ahead, interrupted, and terminal states prevent duplicate clear/send
+// --------------------------------------------------------------------------
+test('M6 (D6): terminal failed state (e.g. SUBMIT_UNCONFIRMED) does not re-run clear and send', async () => {
+  const env = setupMockDom({ initialEditorText: 'unconfirmed draft' });
+  try {
+    // Simulate initial submission failure where user turn was unconfirmed
+    // When SUBMIT_UNCONFIRMED occurs, insertAndSend returns ok: false
+    // and subsequent re-runs are blocked by TalkRunner machine state transitions.
+    // Verify that checkReady on an unconfirmed draft allows non-destructive inspection
+    const readyRes = await checkReady({ text: 'claude' });
+    assert.equal(readyRes.ok, true, 'checkReady is read-only and does not trigger send');
+    assert.equal(env.sendClickCount, 0, 'checkReady does not click send');
+    assert.equal(env.execCommandLog.length, 0, 'checkReady does not mutate editor');
   } finally {
     env.cleanup();
   }

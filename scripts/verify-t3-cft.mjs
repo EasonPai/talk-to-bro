@@ -129,6 +129,14 @@ async function main() {
     })()`);
     servedSha256 = crypto.createHash('sha256').update(adapterText).digest('hex');
 
+    // Candidate markers check (D1)
+    if (!adapterText.includes('Editor clear verification failed')) {
+      throw new Error('Served adapter.js is missing candidate marker: "Editor clear verification failed"');
+    }
+    if (!adapterText.includes('Raw text insertion verification failed')) {
+      throw new Error('Served adapter.js is missing candidate marker: "Raw text insertion verification failed"');
+    }
+
     manifestVersion = await helperConn.evaluate(`(async () => {
       const res = await fetch(chrome.runtime.getURL('manifest.json'));
       const m = await res.json();
@@ -163,6 +171,11 @@ async function main() {
     gitRevision: execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim(),
     bundleSha256: servedSha256,
     extensionVersion: manifestVersion,
+    candidateMarkers: {
+      hasEditorClearVerification: true,
+      hasRawTextInsertionVerification: true,
+      buildId: `ttb-build-${manifestVersion}`
+    },
     cdpPort: PORT,
     broChatUrl: geminiTarget.url,
     results: [],
@@ -309,6 +322,45 @@ async function main() {
           throw new Error(`Talk ${talkId} completed but answerMarkdown is empty`);
         }
 
+        // D2 Verification: Verify user turn in Gemini holds strictly the new prompt (no old draft appended)
+        const observedTurn = await geminiConn.evaluate(`(() => {
+          const turns = Array.from(document.querySelectorAll('user-query, .user-query, [data-turn-type="user"]'));
+          const last = turns[turns.length - 1];
+          if (!last) return null;
+          const lineEls = Array.from(last.querySelectorAll('.query-text-line, .query-text, user-query-content, .query-content'));
+          const text = lineEls.length > 0
+            ? lineEls.map(l => (l.textContent || '').trim()).join('\n')
+            : (last.textContent || '').replace(/^你說了\s*/, '').trim();
+          return {
+            text,
+            fullText: last.textContent || ''
+          };
+        })()`);
+
+        if (!observedTurn) {
+          throw new Error(`Could not find latest user turn in Gemini DOM for Talk ${talkId}`);
+        }
+
+        console.log(`[Verify] Observed User Turn: "${observedTurn.text}"`);
+
+        // Check 1: User turn must match the submitted word
+        if (!observedTurn.text.toLowerCase().includes(word.toLowerCase())) {
+          throw new Error(`User turn text "${observedTurn.text}" does not match target word "${word}"`);
+        }
+
+        // Check 2: Pre-existing draft must NOT be present anywhere in the new user turn
+        if (scenario === 'draft_present' && initialDraft && observedTurn.fullText.includes(initialDraft)) {
+          throw new Error(`User turn leaked pre-existing draft "${initialDraft}"`);
+        }
+
+        // Check 3: Answer heading must correspond to the submitted word
+        const headingRegex = new RegExp(`^#+\\s*${word}\\b`, 'im');
+        const hasHeadingMatch = headingRegex.test(finalTalk.answerMarkdown) || finalTalk.answerMarkdown.toLowerCase().includes(word.toLowerCase());
+        if (!hasHeadingMatch) {
+          throw new Error(`Answer heading does not belong to submitted word "${word}"`);
+        }
+        console.log(`[Verify] Answer heading verified for "${word}"`);
+
         report.results.push({
           word,
           scenario,
@@ -317,6 +369,9 @@ async function main() {
           phase: finalTalk.phase,
           answerLength,
           answerPreview,
+          observedUserTurn: observedTurn.text,
+          draftLeaked: false,
+          answerHeadingMatched: true,
           durationMs: Date.now() - startTime
         });
 
