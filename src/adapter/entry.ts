@@ -109,9 +109,6 @@ export async function insertAndSend(text: string, talkId?: string) {
       cleared = false;
     }
 
-    // Yield a tick so rich text editor observers (e.g. Quill MutationObserver) sync the clear
-    await new Promise(r => setTimeout(r, 60));
-
     if (!cleared || !isDraftEmpty(editor.innerText)) {
       return {
         ok: false,
@@ -140,9 +137,6 @@ export async function insertAndSend(text: string, talkId?: string) {
   } catch {
     inserted = false;
   }
-
-  // Yield a tick so rich text editor observers (e.g. Quill MutationObserver) sync the insertion
-  await new Promise(r => setTimeout(r, 60));
 
   // 5. Verify insertion strictly (NFC + newline normalized equality)
   if (!inserted || normalizeText(editor.innerText) !== normalizeText(text)) {

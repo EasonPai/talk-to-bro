@@ -380,6 +380,30 @@ test('M3 (D5): insert-succeeds-but-content-mismatch aborts without clicking send
 // --------------------------------------------------------------------------
 // M6 (D6): Write-ahead, interrupted, and terminal states prevent duplicate clear/send
 // --------------------------------------------------------------------------
+for (const initialEditorText of ['', 'existing unsent draft']) {
+  test(`T-3 frozen pre-click timers do not prevent verified single send (${initialEditorText ? 'draft' : 'empty'})`, async () => {
+    const env = setupMockDom({ initialEditorText });
+    const originalSetTimeout = globalThis.setTimeout;
+    const scheduledDelays: number[] = [];
+    globalThis.setTimeout = ((_callback: unknown, delay: number) => {
+      scheduledDelays.push(delay);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    try {
+      const result = insertAndSend('banana', 'talk-frozen-timers');
+      assert.equal(env.sendClickCount, 1, 'Exact verified content and enabled send must click without a timer callback');
+      assert.equal(env.editorEl.innerText, 'banana');
+      assert.deepEqual(env.execCommandLog.map(entry => entry.command), initialEditorText ? ['delete', 'insertText'] : ['insertText']);
+      assert.equal(env.stopClickCount, 0);
+      assert.deepEqual(scheduledDelays, [], 'No unconditional timer before click or already-present turn verification');
+      assert.equal((await result).ok, true);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      env.cleanup();
+    }
+  });
+}
+
 test('M6 (D6): terminal failed state (e.g. SUBMIT_UNCONFIRMED) does not re-run clear and send', async () => {
   const env = setupMockDom({ initialEditorText: 'unconfirmed draft' });
   try {

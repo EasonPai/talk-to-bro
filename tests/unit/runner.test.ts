@@ -38,6 +38,45 @@ function createHarness() {
   };
 }
 
+test('T-3 late successful send result never overwrites same-ID terminal failure or resends', async () => {
+  const h = createHarness();
+  await saveSettingsStorage(h.storageLocal, { broChatUrl: 'https://gemini.google.com/app/1234567890abcdef', updatedAt: h.getTime() });
+  await h.runner.boot();
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  let sends = 0;
+  h.adapter.send = async () => {
+    sends++;
+    entered();
+    await delayed;
+    return { ok: true, sentAt: h.getTime() };
+  };
+  const submission = h.runner.submit('late-result-fixture');
+  await started;
+  const before = (await getRuntimeStorage(h.storageLocal)).lastTalk!;
+  assert.equal(before.phase, 'submitting');
+  h.advanceTime(30011);
+  await h.runner.tick();
+  const failed = (await getRuntimeStorage(h.storageLocal)).lastTalk!;
+  assert.equal(failed.id, before.id);
+  assert.equal(failed.failure?.code, 'EDITOR_BUSY');
+  assert.equal(failed.failure?.stage, 'send');
+  assert.equal(failed.failure?.maybeSent, true);
+  assert.equal(failed.sentAt, undefined);
+  release();
+  await submission;
+  await h.runner.tick();
+  const after = (await getRuntimeStorage(h.storageLocal)).lastTalk!;
+  assert.equal(after.id, failed.id);
+  assert.equal(after.phase, 'failed');
+  assert.deepEqual(after.failure, failed.failure);
+  assert.equal(after.sentAt, undefined);
+  assert.equal(sends, 1);
+  assert.equal((await getRuntimeStorage(h.storageLocal)).logByTalkId[after.id]?.result, 'send_failed');
+});
+
 test('Talk Runner - Happy path execution with streaming, completion and storage persistence', async () => {
   const h = createHarness();
   await saveSettingsStorage(h.storageLocal, {
