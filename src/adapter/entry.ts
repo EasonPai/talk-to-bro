@@ -64,21 +64,16 @@ export async function checkReady(args: { chatId?: string; text?: string; targetU
   }
 
   const stopBtn = queryOne('stopButton');
-  if (stopBtn && getComputedStyle(stopBtn).display !== 'none') {
+  if (stopBtn && (typeof getComputedStyle !== 'undefined' ? getComputedStyle(stopBtn).display !== 'none' : true)) {
     return { ok: false, code: 'EDITOR_BUSY', reason: 'Bro is currently generating response' };
-  }
-
-  // Draft protection: If editor already has non-empty text that doesn't match prompt, preserve it!
-  const existingText = editor.innerText || '';
-  if (!isDraftEmpty(existingText) && normalizeText(existingText) !== normalizeText(args.text || '')) {
-    return { ok: false, code: 'EDITOR_BUSY', reason: 'User draft present in editor' };
   }
 
   return { ok: true };
 }
 
 /**
- * Safely inserts text via document.execCommand("insertText") and dispatches submission.
+ * Safely clears any unsent draft, inserts text via document.execCommand("insertText"),
+ * and dispatches submission (T-3).
  */
 export async function insertAndSend(text: string, talkId?: string) {
   const editor = queryOne<HTMLElement>('editor');
@@ -86,25 +81,56 @@ export async function insertAndSend(text: string, talkId?: string) {
     return { ok: false, code: 'INPUT_NOT_FOUND', reason: 'Editor not found' };
   }
 
-  // 1. Immediate Draft Re-check before DOM selection/mutation
-  const existingDraft = editor.innerText || '';
-  if (!isDraftEmpty(existingDraft) && normalizeText(existingDraft) !== normalizeText(text)) {
-    return { ok: false, code: 'EDITOR_BUSY', reason: 'User draft present in editor prior to insert' };
+  // 1. Guard against generating state before any editor mutation
+  const stopBtn = queryOne('stopButton');
+  if (stopBtn && (typeof getComputedStyle !== 'undefined' ? getComputedStyle(stopBtn).display !== 'none' : true)) {
+    return { ok: false, code: 'EDITOR_BUSY', reason: 'Bro is currently generating response' };
   }
 
-  // 2. Mark baselines on existing turns
+  const doc = editor.ownerDocument || document;
+  const win = doc.defaultView || (typeof window !== 'undefined' ? window : (globalThis as any));
+
+  // 2. Explicit Clear: if editor contains any non-empty draft, clear it and verify empty
+  const existingDraft = editor.innerText || '';
+  if (!isDraftEmpty(existingDraft)) {
+    editor.focus();
+    let cleared = false;
+    try {
+      const selection = win.getSelection();
+      const range = doc.createRange();
+      range.selectNodeContents(editor);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      cleared = doc.execCommand('delete', false);
+      try {
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch {}
+    } catch {
+      cleared = false;
+    }
+
+    if (!cleared || !isDraftEmpty(editor.innerText)) {
+      return {
+        ok: false,
+        code: 'INPUT_NOT_FOUND',
+        reason: 'Editor clear verification failed'
+      };
+    }
+  }
+
+  // 3. Mark baselines on existing turns
   markBaselines();
 
-  // 3. Focus and select content
+  // 4. Focus and insert content
   editor.focus();
   let inserted = false;
   try {
-    const selection = window.getSelection();
-    const range = document.createRange();
+    const selection = win.getSelection();
+    const range = doc.createRange();
     range.selectNodeContents(editor);
     selection?.removeAllRanges();
     selection?.addRange(range);
-    inserted = document.execCommand('insertText', false, text);
+    inserted = doc.execCommand('insertText', false, text);
     try {
       editor.dispatchEvent(new Event('input', { bubbles: true }));
     } catch {}
@@ -112,7 +138,7 @@ export async function insertAndSend(text: string, talkId?: string) {
     inserted = false;
   }
 
-  // 4. Verify insertion strictly (NFC + newline normalized equality)
+  // 5. Verify insertion strictly (NFC + newline normalized equality)
   if (!inserted || normalizeText(editor.innerText) !== normalizeText(text)) {
     return {
       ok: false,
