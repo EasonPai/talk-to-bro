@@ -78,9 +78,28 @@ async function main() {
   }
   console.log(`[CfT] Located Bro Chat Tab: ${geminiTarget.title} (${geminiTarget.id})`);
 
-  // 2. Open an extension page to communicate with extension runtime
-  const extTarget = targets.find((t) => t.url.startsWith('chrome-extension://'));
-  const extId = extTarget?.url?.match(/chrome-extension:\/\/([a-z0-9]+)\//)?.[1] || 'bjdcojepcfcoinghohdhdmjmnfkjegmd';
+  // 2. Resolve active and enabled extension ID
+  let extId = 'gifbhcpkdcdokkjbomgoebomdeklfbdk';
+  const extPage = targets.find((t) => t.url === 'chrome://extensions/');
+  if (extPage) {
+    const extConn = cdp(extPage.webSocketDebuggerUrl);
+    try {
+      const detectedId = await extConn.evaluate(`(() => {
+        const manager = document.querySelector('extensions-manager');
+        const itemList = manager?.shadowRoot?.querySelector('extensions-item-list');
+        const items = itemList?.shadowRoot?.querySelectorAll('extensions-item');
+        for (const item of (items || [])) {
+          if (item.data?.name?.includes('Talk To Bro') && item.data?.state === 'ENABLED') {
+            return item.data.id;
+          }
+        }
+        return null;
+      })()`);
+      if (detectedId) extId = detectedId;
+    } finally {
+      extConn.close();
+    }
+  }
   console.log(`[CfT] Extension ID: ${extId}`);
 
   // 3. Verify bundle identity
