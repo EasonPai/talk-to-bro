@@ -1,402 +1,189 @@
-// scripts/verify-t3-cft.mjs
-// Real Chrome for Testing verification script for T-3 (M7)
-// Verifies words: claude, haiku, Anthropology, apple
-// Under both (1) pre-existing unsent draft and (2) empty editor scenarios.
-// Runs on existing Bro Chat tab via CDP 9222 without launching extra browsers or using pkill.
-
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertIdle, assertAnswer } from './lib/t3-verdict.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const ROOT = path.resolve(__dirname, '..');
-const EVIDENCE_DIR = path.resolve(ROOT, '.scratch/orca-team/evidence');
-const PORT = 9222;
-const BASE = `http://127.0.0.1:${PORT}`;
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const BASE = 'http://127.0.0.1:9222';
+const URL = process.env.T3_BRO_CHAT_URL;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const dir = path.join(ROOT, '.scratch/orca-team/evidence');
+fs.mkdirSync(dir, { recursive: true });
+const out = path.join(dir, `t3-cft-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+const report = { timestamp: new Date().toISOString(), gitRevision: execSync('git rev-parse HEAD', { cwd: ROOT }).toString().trim(), results: [], overall: 'RUNNING' };
+const save = () => fs.writeFileSync(out, JSON.stringify(report, null, 2));
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function cdp(wsUrl) {
-  const ws = new WebSocket(wsUrl);
-  let seq = 0;
-  const pend = new Map();
-  ws.onmessage = (m) => {
-    const d = JSON.parse(m.data);
-    pend.get(d.id)?.(d);
+async function connect(url) {
+  const ws = new WebSocket(url);
+  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
+  let id = 0;
+  const pending = new Map();
+  ws.onmessage = e => {
+    const message = JSON.parse(e.data);
+    const entry = pending.get(message.id);
+    if (!entry) return;
+    pending.delete(message.id);
+    clearTimeout(entry.timer);
+    if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+    else entry.resolve(message.result);
   };
-  const ready = new Promise((r, rej) => {
-    ws.onopen = r;
-    ws.onerror = rej;
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const key = ++id;
+    const timer = setTimeout(() => { pending.delete(key); reject(new Error(`CDP_TIMEOUT: ${method}; no resend`)); }, 90000);
+    pending.set(key, { resolve, reject, timer });
+    ws.send(JSON.stringify({ id: key, method, params }));
   });
-  const send = async (method, params = {}) => {
-    await ready;
-    const id = ++seq;
-    ws.send(JSON.stringify({ id, method, params }));
-    const resp = await new Promise((r) => pend.set(id, r));
-    if (resp.error) throw new Error(`${method} error: ${JSON.stringify(resp.error)}`);
-    return resp.result;
-  };
-  const evaluate = async (expression, userGesture = false) => {
-    const res = await send('Runtime.evaluate', {
-      expression,
-      userGesture,
-      awaitPromise: true,
-      returnByValue: true
-    });
-    if (res?.exceptionDetails) throw new Error(JSON.stringify(res.exceptionDetails));
-    return res?.result?.value;
-  };
-  return { send, evaluate, close: () => ws.close() };
-}
-
-async function closeTarget(targetId) {
-  try {
-    await fetch(`${BASE}/json/close/${targetId}`);
-  } catch {}
-}
-
-async function main() {
-  console.log('====================================================');
-  console.log(' Talk To Bro: Comprehensive T-3 CfT Verification');
-  console.log(' Reusing CDP Port 9222 (isolated profile)');
-  console.log('====================================================');
-
-  fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-
-  const listRes = await fetch(`${BASE}/json/list`);
-  const targets = await listRes.json();
-
-  // 1. Locate Bro Chat tab
-  const geminiTarget = targets.find(
-    (t) => t.type === 'page' && t.url.includes('gemini.google.com/app/2e89301dd952fb12')
-  );
-  if (!geminiTarget) {
-    throw new Error('Could not find existing Bro Chat Gemini tab (gemini.google.com/app/2e89301dd952fb12)');
-  }
-  console.log(`[CfT] Located Bro Chat Tab: ${geminiTarget.title} (${geminiTarget.id})`);
-
-  // 2. Resolve active and enabled extension ID
-  let extId = 'gifbhcpkdcdokkjbomgoebomdeklfbdk';
-  const extPage = targets.find((t) => t.url === 'chrome://extensions/');
-  if (extPage) {
-    const extConn = cdp(extPage.webSocketDebuggerUrl);
-    try {
-      const detectedId = await extConn.evaluate(`(() => {
-        const manager = document.querySelector('extensions-manager');
-        const itemList = manager?.shadowRoot?.querySelector('extensions-item-list');
-        const items = itemList?.shadowRoot?.querySelectorAll('extensions-item');
-        for (const item of (items || [])) {
-          if (item.data?.name?.includes('Talk To Bro') && item.data?.state === 'ENABLED') {
-            return item.data.id;
-          }
-        }
-        return null;
-      })()`);
-      if (detectedId) extId = detectedId;
-    } finally {
-      extConn.close();
-    }
-  }
-  console.log(`[CfT] Extension ID: ${extId}`);
-
-  // 3. Verify bundle identity
-  const localAdapterJs = fs.readFileSync(path.resolve(ROOT, 'dist/adapter.js'), 'utf-8');
-  const localSha256 = crypto.createHash('sha256').update(localAdapterJs).digest('hex');
-
-  const helperPageRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
-  const helperPage = await helperPageRes.json();
-  const helperConn = cdp(helperPage.webSocketDebuggerUrl);
-
-  let servedSha256 = null;
-  let manifestVersion = null;
-  try {
-    let isReady = false;
-    for (let i = 0; i < 50; i++) {
-      await sleep(100);
-      try {
-        isReady = await helperConn.evaluate(`typeof chrome?.runtime?.getURL === 'function'`);
-        if (isReady) break;
-      } catch {}
-    }
-    if (!isReady) throw new Error('Extension popup context failed to initialize chrome.runtime.getURL');
-
-    const adapterText = await helperConn.evaluate(`(async () => {
-      const res = await fetch(chrome.runtime.getURL('adapter.js'));
-      return await res.text();
-    })()`);
-    servedSha256 = crypto.createHash('sha256').update(adapterText).digest('hex');
-
-    // Candidate markers check (D1)
-    if (!adapterText.includes('Editor clear verification failed')) {
-      throw new Error('Served adapter.js is missing candidate marker: "Editor clear verification failed"');
-    }
-    if (!adapterText.includes('Raw text insertion verification failed')) {
-      throw new Error('Served adapter.js is missing candidate marker: "Raw text insertion verification failed"');
-    }
-
-    manifestVersion = await helperConn.evaluate(`(async () => {
-      const res = await fetch(chrome.runtime.getURL('manifest.json'));
-      const m = await res.json();
-      return m.version;
-    })()`);
-
-    // Ensure settings:v1 has broChatUrl configured
-    await helperConn.evaluate(`(async () => {
-      await chrome.storage.local.set({
-        'settings:v1': {
-          broChatUrl: ${JSON.stringify(geminiTarget.url)},
-          updatedAt: Date.now()
-        }
-      });
-    })()`);
-  } finally {
-    helperConn.close();
-    await closeTarget(helperPage.id);
-  }
-
-  console.log(`[CfT] Local adapter.js SHA-256:  ${localSha256}`);
-  console.log(`[CfT] Served adapter.js SHA-256: ${servedSha256}`);
-  console.log(`[CfT] Extension Version:         ${manifestVersion}`);
-
-  if (servedSha256 !== localSha256) {
-    throw new Error(`Bundle SHA mismatch: local=${localSha256}, served=${servedSha256}`);
-  }
-
-  const geminiConn = cdp(geminiTarget.webSocketDebuggerUrl);
-
-  const report = {
-    gitRevision: execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim(),
-    bundleSha256: servedSha256,
-    extensionVersion: manifestVersion,
-    candidateMarkers: {
-      hasEditorClearVerification: true,
-      hasRawTextInsertionVerification: true,
-      buildId: `ttb-build-${manifestVersion}`
+  return {
+    send,
+    async evaluate(expression) {
+      const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails));
+      return r.result?.value;
     },
-    cdpPort: PORT,
-    broChatUrl: geminiTarget.url,
-    results: [],
-    timestamp: new Date().toISOString()
+    close: () => ws.close()
   };
+}
 
-  const words = ['claude', 'haiku', 'Anthropology', 'apple'];
-  const scenarios = ['draft_present', 'empty_editor'];
+const snapshotExpression = `(() => {
+  const visible = e => !!e && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().height > 0;
+  const users = [...document.querySelectorAll('user-query')];
+  const last = users.at(-1);
+  const models = [...document.querySelectorAll('model-response')];
+  const response = last ? models.find(e => last.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING) : models.at(-1);
+  const lines = last ? [...last.querySelectorAll('.query-text-line')] : [];
+  return {
+    url: location.href, visibility: document.visibilityState, focus: document.hasFocus(),
+    editor: document.querySelector('rich-textarea .ql-editor[contenteditable="true"]')?.innerText ?? null,
+    stop: [...document.querySelectorAll('button.send-button.stop,button[aria-label*="Stop" i],button[aria-label*="停止" i]')].some(visible),
+    pending: !!response?.querySelector('.markdown[aria-busy="true"], .pending'),
+    userCount: users.length,
+    userText: lines.map(e => e.textContent.trim()).join('\\n'),
+    pairedAnswer: response?.querySelector('.markdown')?.textContent ?? '',
+    headings: response ? [...response.querySelectorAll('.markdown h1,.markdown h2,.markdown h3')].map(e=>e.textContent) : []
+  };
+})()`;
 
+let gemini, extension, browser, createdTarget;
+try {
+  if (!URL || !/^https:\/\/gemini\.google\.com\/app\/[a-z0-9]+$/.test(URL)) throw new Error('Set T3_BRO_CHAT_URL to the Board-authorized test chat');
+  report.browser = await (await fetch(`${BASE}/json/version`)).json();
+  const targets = await (await fetch(`${BASE}/json/list`)).json();
+  const target = targets.find(t => t.type === 'page' && t.url.includes('gemini.google.com/app/'));
+  const extensionsTarget = targets.find(t => t.url === 'chrome://extensions/');
+  if (!target || !extensionsTarget) throw new Error('Existing Gemini and extensions targets required');
+  gemini = await connect(target.webSocketDebuggerUrl);
+  report.beforeNavigation = await gemini.evaluate(snapshotExpression);
+  assertIdle(report.beforeNavigation);
+  const extManager = await connect(extensionsTarget.webSocketDebuggerUrl);
+  let extId;
   try {
-    for (const word of words) {
-      for (const scenario of scenarios) {
-        console.log(`\n----------------------------------------------------`);
-        console.log(`[Test Run] Word: "${word}" | Scenario: ${scenario}`);
-        console.log(`----------------------------------------------------`);
-
-        // Wait until Gemini stops generating from any previous request
-        for (let i = 0; i < 60; i++) {
-          const isBusy = await geminiConn.evaluate(`(() => {
-            const stop = document.querySelector('button.send-button.stop, button[aria-label*="Stop" i], button[aria-label*="停止" i]');
-            return !!stop && getComputedStyle(stop).display !== 'none';
-          })()`);
-          if (!isBusy) break;
-          console.log('[Wait] Waiting for Gemini generation to complete...');
+    extId = await extManager.evaluate(`(() => {
+      const list = document.querySelector('extensions-manager')?.shadowRoot?.querySelector('extensions-item-list');
+      return [...(list?.shadowRoot?.querySelectorAll('extensions-item') || [])].find(e => e.data?.name?.includes('Talk To Bro') && e.data?.state === 'ENABLED')?.data.id;
+    })()`);
+  } finally { extManager.close(); }
+  if (!extId) throw new Error('Cannot resolve enabled extension identity');
+  report.extensionId = extId;
+  browser = await connect(report.browser.webSocketDebuggerUrl);
+  const existing = targets.find(t => t.url === `chrome-extension://${extId}/popup.html`);
+  if (existing) extension = await connect(existing.webSocketDebuggerUrl);
+  else {
+    const result = await browser.send('Target.createTarget', { url: `chrome-extension://${extId}/popup.html`, background: true });
+    createdTarget = result.targetId;
+    const list = await (await fetch(`${BASE}/json/list`)).json();
+    extension = await connect(list.find(t => t.id === createdTarget).webSocketDebuggerUrl);
+  }
+  for (let i = 0; i < 50; i++) {
+    if (await extension.evaluate(`typeof chrome?.runtime?.sendMessage === 'function'`)) break;
+    await sleep(100);
+  }
+  report.previousSettings = await extension.evaluate(`chrome.storage.local.get('settings:v1')`);
+  save();
+  if (target.url !== URL) {
+    await gemini.send('Page.navigate', { url: URL });
+    for (let i = 0; i < 60; i++) {
+      await sleep(500);
+      try { if ((await gemini.evaluate(snapshotExpression)).editor !== null) break; } catch {}
+    }
+  }
+  await gemini.send('Page.bringToFront');
+  for (let i = 0; i < 60; i++) {
+    report.chatReadiness = await gemini.evaluate(snapshotExpression);
+    if (report.chatReadiness.url === URL && report.chatReadiness.editor !== null && report.chatReadiness.userCount > 0 && report.chatReadiness.pairedAnswer) break;
+    await sleep(500);
+  }
+  if (report.chatReadiness.url !== URL || report.chatReadiness.editor === null || report.chatReadiness.userCount === 0 || !report.chatReadiness.pairedAnswer) throw new Error('CHAT_HISTORY_NOT_HYDRATED: translator readiness unconfirmed; no send');
+  assertIdle(report.chatReadiness);
+  await extension.evaluate(`chrome.storage.local.set({'settings:v1':{...${JSON.stringify(report.previousSettings['settings:v1'] || {})},broChatUrl:${JSON.stringify(URL)},updatedAt:Date.now()}})`);
+  report.updatedSettings = await extension.evaluate(`chrome.storage.local.get('settings:v1')`);
+  report.bundle = await extension.evaluate(`(async () => ({manifest:chrome.runtime.getManifest(),adapter:await (await fetch(chrome.runtime.getURL('adapter.js'))).text()}))()`);
+  const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+  report.bundleSha256 = hash(report.bundle.adapter);
+  report.localBundleSha256 = hash(fs.readFileSync(path.join(ROOT, 'dist/adapter.js')));
+  report.extensionVersion = report.bundle.manifest.version;
+  delete report.bundle;
+  if (report.bundleSha256 !== report.localBundleSha256) throw new Error('CANDIDATE_BUNDLE_MISMATCH');
+  save();
+  for (const word of ['claude', 'haiku', 'Anthropology', 'apple']) {
+    for (const scenario of ['draft_present', 'empty_editor']) {
+      const result = { word, scenario, startedAt: new Date().toISOString() };
+      report.results.push(result);
+      try {
+        result.beforeSetup = await gemini.evaluate(snapshotExpression);
+        assertIdle(result.beforeSetup);
+        const draft = scenario === 'draft_present' ? `preexisting_draft_for_${word}_${Date.now()}` : '';
+        result.initialDraft = draft;
+        await gemini.evaluate(`(() => {
+          const ed = document.querySelector('rich-textarea .ql-editor[contenteditable="true"]');
+          if (!ed) throw new Error('EDITOR_MISSING');
+          ed.focus(); const range=document.createRange(); range.selectNodeContents(ed);
+          const selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+          document.execCommand('delete',false);
+          ${draft ? `document.execCommand('insertText',false,${JSON.stringify(draft)});` : ''}
+          ed.dispatchEvent(new Event('input',{bubbles:true}));
+        })()`);
+        await sleep(500);
+        result.afterSetup = await gemini.evaluate(snapshotExpression);
+        assertIdle(result.afterSetup);
+        if (result.afterSetup.editor.trim() !== draft) throw new Error('DRAFT_SETUP_MISMATCH');
+        // Existing non-Gemini target keeps the actual send/read observation background-only.
+        await browser.send('Target.activateTarget', { targetId: extensionsTarget.id });
+        result.preSubmit = await gemini.evaluate(snapshotExpression);
+        assertIdle(result.preSubmit);
+        if (result.preSubmit.visibility !== 'hidden') throw new Error('BACKGROUND_PRECONDITION_NOT_MET');
+        save();
+        result.submit = await extension.evaluate(`chrome.runtime.sendMessage({action:'talk/submit',text:${JSON.stringify(word)}})`);
+        if (!result.submit?.accepted || !result.submit.talk?.id) throw new Error('SUBMIT_NOT_ACCEPTED');
+        const talkId = result.submit.talk.id;
+        for (let i = 0; i < 70; i++) {
+          const data = await extension.evaluate(`chrome.storage.local.get('runtime:v1')`);
+          const talk = data['runtime:v1']?.lastTalk;
+          if (talk?.id === talkId && ['done','failed'].includes(talk.phase)) { result.finalTalk = talk; break; }
           await sleep(1000);
         }
-
-        // Setup initial editor state for scenario
-        let initialDraft = '';
-        if (scenario === 'draft_present') {
-          initialDraft = `preexisting_draft_for_${word}_${Date.now() % 10000}`;
-          await geminiConn.evaluate(`((draft) => {
-            const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]');
-            if (!ed) throw new Error('Gemini editor element not found');
-            ed.focus();
-            const range = document.createRange();
-            range.selectNodeContents(ed);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('insertText', false, draft);
-            ed.dispatchEvent(new Event('input', { bubbles: true }));
-          })(${JSON.stringify(initialDraft)})`);
-          console.log(`[Setup] Set pre-existing draft: "${initialDraft}"`);
-          await sleep(200);
-        } else {
-          await geminiConn.evaluate(`(() => {
-            const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]');
-            if (!ed) throw new Error('Gemini editor element not found');
-            ed.focus();
-            const range = document.createRange();
-            range.selectNodeContents(ed);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('delete', false);
-            ed.dispatchEvent(new Event('input', { bubbles: true }));
-          })()`);
-          console.log(`[Setup] Emptied Gemini editor`);
-        }
-
-        // Verify editor state before submitting
-        const observedEditorText = await geminiConn.evaluate(`(() => {
-          const ed = document.querySelector('.ql-editor') || document.querySelector('[contenteditable="true"]');
-          return ed ? ed.innerText.trim() : null;
-        })()`);
-        console.log(`[Setup] Verified editor text before submit: "${observedEditorText}"`);
-
-        // Submit Talk via extension popup/background messaging
-        const submitPageRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
-        const submitPage = await submitPageRes.json();
-        const submitConn = cdp(submitPage.webSocketDebuggerUrl);
-
-        let submitResult = null;
-        try {
-          let hasRuntime = false;
-          for (let i = 0; i < 50; i++) {
-            await sleep(100);
-            try {
-              hasRuntime = await submitConn.evaluate(`typeof chrome?.runtime?.sendMessage === 'function'`);
-              if (hasRuntime) break;
-            } catch {}
-          }
-
-          submitResult = await submitConn.evaluate(`(async () => {
-            return await chrome.runtime.sendMessage({ action: 'talk/submit', text: ${JSON.stringify(word)} });
-          })()`);
-          console.log(`[Submit] Sent talk/submit for "${word}":`, submitResult);
-        } finally {
-          submitConn.close();
-          await closeTarget(submitPage.id);
-        }
-
-        if (!submitResult?.accepted || !submitResult?.talk?.id) {
-          throw new Error(`talk/submit failed for ${word} in ${scenario}: ${JSON.stringify(submitResult)}`);
-        }
-
-        const talkId = submitResult.talk.id;
-        const startTime = Date.now();
-        let finalTalk = null;
-
-        // Poll storage until phase reaches 'done' or 'failed'
-        const monitorPageRes = await fetch(`${BASE}/json/new?chrome-extension://${extId}/popup.html`, { method: 'PUT' });
-        const monitorPage = await monitorPageRes.json();
-        const monitorConn = cdp(monitorPage.webSocketDebuggerUrl);
-
-        try {
-          while (Date.now() - startTime < 60000) {
-            await sleep(1000);
-            const storage = await monitorConn.evaluate(`(async () => {
-              return await chrome.storage.local.get(['runtime:v1']);
-            })()`);
-            const lastTalk = storage?.['runtime:v1']?.lastTalk;
-            if (lastTalk?.id === talkId) {
-              process.stdout.write(`.`);
-              if (lastTalk.phase === 'done' || lastTalk.phase === 'failed') {
-                finalTalk = lastTalk;
-                break;
-              }
-            }
-          }
-        } finally {
-          monitorConn.close();
-          await closeTarget(monitorPage.id);
-        }
-
-        console.log(`\n[Result] Talk ${talkId} reached phase: ${finalTalk?.phase} in ${Date.now() - startTime}ms`);
-
-        if (!finalTalk) {
-          throw new Error(`Timeout waiting for Talk ${talkId} to complete`);
-        }
-
-        if (finalTalk.phase !== 'done') {
-          const code = finalTalk.failure?.code || finalTalk.failureCode;
-          const reason = finalTalk.failureReason || finalTalk.failure?.reason;
-          throw new Error(`Talk ${talkId} failed with code: ${code}, reason: ${reason}`);
-        }
-
-        const answerLength = finalTalk.answerMarkdown?.length || 0;
-        const answerPreview = (finalTalk.answerMarkdown || '').slice(0, 120).replace(/\n/g, ' ');
-        console.log(`[Result] Answer (${answerLength} chars): "${answerPreview}..."`);
-
-        if (answerLength === 0) {
-          throw new Error(`Talk ${talkId} completed but answerMarkdown is empty`);
-        }
-
-        // D2 Verification: Verify user turn in Gemini holds strictly the new prompt (no old draft appended)
-        const observedTurn = await geminiConn.evaluate(`(() => {
-          const turns = Array.from(document.querySelectorAll('user-query, .user-query, [data-turn-type="user"]'));
-          const last = turns[turns.length - 1];
-          if (!last) return null;
-          const lineEls = Array.from(last.querySelectorAll('.query-text-line, .query-text, user-query-content, .query-content'));
-          const text = lineEls.length > 0
-            ? lineEls.map(l => (l.textContent || '').trim()).join('\\n')
-            : (last.textContent || '').replace(/^你說了\\s*/, '').trim();
-          return {
-            text,
-            fullText: last.textContent || ''
-          };
-        })()`);
-
-        if (!observedTurn) {
-          throw new Error(`Could not find latest user turn in Gemini DOM for Talk ${talkId}`);
-        }
-
-        console.log(`[Verify] Observed User Turn: "${observedTurn.text}"`);
-
-        // Check 1: User turn must match the submitted word
-        if (!observedTurn.text.toLowerCase().includes(word.toLowerCase())) {
-          throw new Error(`User turn text "${observedTurn.text}" does not match target word "${word}"`);
-        }
-
-        // Check 2: Pre-existing draft must NOT be present anywhere in the new user turn
-        if (scenario === 'draft_present' && initialDraft && observedTurn.fullText.includes(initialDraft)) {
-          throw new Error(`User turn leaked pre-existing draft "${initialDraft}"`);
-        }
-
-        // Check 3: Answer heading must correspond to the submitted word
-        const headingRegex = new RegExp(`^#+\\s*${word}\\b`, 'im');
-        const hasHeadingMatch = headingRegex.test(finalTalk.answerMarkdown) || finalTalk.answerMarkdown.toLowerCase().includes(word.toLowerCase());
-        if (!hasHeadingMatch) {
-          throw new Error(`Answer heading does not belong to submitted word "${word}"`);
-        }
-        console.log(`[Verify] Answer heading verified for "${word}"`);
-
-        report.results.push({
-          word,
-          scenario,
-          initialDraft,
-          talkId,
-          phase: finalTalk.phase,
-          answerLength,
-          answerPreview,
-          observedUserTurn: observedTurn.text,
-          draftLeaked: false,
-          answerHeadingMatched: true,
-          durationMs: Date.now() - startTime
-        });
-
-        // Generous breathing room between requests for Gemini rate limits
-        await sleep(3000);
+        result.after = await gemini.evaluate(snapshotExpression);
+        assertAnswer({ beforeCount:result.preSubmit.userCount, afterCount:result.after.userCount, userText:result.after.userText, word, answer:result.finalTalk?.answerMarkdown, pairedAnswer:result.after.pairedAnswer, phase:result.finalTalk?.phase });
+        result.outcome = 'PASS';
+        console.log(`PASS ${word}/${scenario} ${talkId} visibility=${result.after.visibility}`);
+        save();
+      } catch (error) {
+        result.outcome = 'FAIL'; result.error = String(error);
+        try { result.failureSnapshot = await gemini.evaluate(snapshotExpression); } catch {}
+        save();
+        throw error;
       }
     }
-
-    report.overall = 'PASS';
-    const outPath = path.join(EVIDENCE_DIR, 't3-cft-evidence.json');
-    fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
-
-    // Also write to root evidence directory
-    fs.writeFileSync(
-      path.resolve('/Users/eason/Documents/Dev/ai/talk-to-bro/.scratch/orca-team/evidence/t3-cft-evidence.json'),
-      JSON.stringify(report, null, 2)
-    );
-
-    console.log(`\n✓ All 8/8 T-3 CfT M7 Scenarios PASSED! Evidence saved to ${outPath}`);
-  } finally {
-    geminiConn.close();
   }
+  report.overall = 'PASS';
+} catch (error) {
+  report.overall = 'FAIL'; report.error = String(error); process.exitCode = 1;
+  console.error(error);
+} finally {
+  save();
+  gemini?.close(); extension?.close();
+  if (createdTarget) await browser?.send('Target.closeTarget', { targetId: createdTarget });
+  browser?.close();
+  console.log(`Evidence: ${out}`);
 }
-
-main().catch((err) => {
-  console.error('[CfT T-3 Verification Error]:', err);
-  process.exit(1);
-});
