@@ -94,11 +94,15 @@ async function main() {
   let servedSha256 = null;
   let manifestVersion = null;
   try {
-    for (let i = 0; i < 20; i++) {
+    let isReady = false;
+    for (let i = 0; i < 50; i++) {
       await sleep(100);
-      const ready = await helperConn.evaluate(`typeof chrome?.runtime?.getURL === 'function'`);
-      if (ready) break;
+      try {
+        isReady = await helperConn.evaluate(`typeof chrome?.runtime?.getURL === 'function'`);
+        if (isReady) break;
+      } catch {}
     }
+    if (!isReady) throw new Error('Extension popup context failed to initialize chrome.runtime.getURL');
 
     const adapterText = await helperConn.evaluate(`(async () => {
       const res = await fetch(chrome.runtime.getURL('adapter.js'));
@@ -205,10 +209,13 @@ async function main() {
 
         let submitResult = null;
         try {
-          for (let i = 0; i < 20; i++) {
+          let hasRuntime = false;
+          for (let i = 0; i < 50; i++) {
             await sleep(100);
-            const hasRuntime = await submitConn.evaluate(`typeof chrome?.runtime?.sendMessage === 'function'`);
-            if (hasRuntime) break;
+            try {
+              hasRuntime = await submitConn.evaluate(`typeof chrome?.runtime?.sendMessage === 'function'`);
+              if (hasRuntime) break;
+            } catch {}
           }
 
           submitResult = await submitConn.evaluate(`(async () => {
