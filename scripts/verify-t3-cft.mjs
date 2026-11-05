@@ -134,6 +134,16 @@ async function main() {
       const m = await res.json();
       return m.version;
     })()`);
+
+    // Ensure settings:v1 has broChatUrl configured
+    await helperConn.evaluate(`(async () => {
+      await chrome.storage.local.set({
+        'settings:v1': {
+          broChatUrl: ${JSON.stringify(geminiTarget.url)},
+          updatedAt: Date.now()
+        }
+      });
+    })()`);
   } finally {
     helperConn.close();
     await closeTarget(helperPage.id);
