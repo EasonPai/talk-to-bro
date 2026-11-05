@@ -329,8 +329,8 @@ async function main() {
           if (!last) return null;
           const lineEls = Array.from(last.querySelectorAll('.query-text-line, .query-text, user-query-content, .query-content'));
           const text = lineEls.length > 0
-            ? lineEls.map(l => (l.textContent || '').trim()).join('\n')
-            : (last.textContent || '').replace(/^你說了\s*/, '').trim();
+            ? lineEls.map(l => (l.textContent || '').trim()).join('\\n')
+            : (last.textContent || '').replace(/^你說了\\s*/, '').trim();
           return {
             text,
             fullText: last.textContent || ''
