@@ -124,6 +124,16 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
 - **例外**：程式碼區塊內的指令與外部網址（照常使用 https 連結）不受此限。
 <!-- AGENTIC_SETUP:FILE_LINKS_END -->
 
+<!-- AGENTIC_SETUP:TEST_SCOPE_START -->
+### Test Scope (測試範圍：開發跑相關、發布前跑全部)
+
+- **開發中只跑相關測試**：只跑本次改動行為對應的測試（指定測試檔、類別或案例），除錯時只重跑失敗的那一個；不要每次改動都跑完整測試套件。
+  - 範例（幾秒即可得到結果）：`python3 -m unittest test_deployment.DeliveryTests.test_longrun_mode_is_board_only_exclusive_and_shows_bro_reminder`、`pytest tests/test_x.py::test_case`、`npx vitest run path/to/file.test.ts -t "case name"`。
+- **合併或發布前才跑全部**：合併回主幹（如 `dev`）、發布技能（`publish-skills.sh`）或 release 前，完整測試套件跑一次。同一個 commit 已全跑通過且之後未變更時，可沿用結果並註明。
+- **回報實際跑了什麼**：回報時列出實際執行的測試選擇器與數量；退出碼為 0 但沒有選中任何測試，不算通過。
+- 啟用 orca-team 時，角色分工（Engineer / QA / PM）以 `team-rules.md` 第 5 節為準。
+<!-- AGENTIC_SETUP:TEST_SCOPE_END -->
+
 <!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_START -->
 ### Skill Management & Discovery Protocol (Skill Manager 統一管理與嚴格邊界協議)
 
@@ -152,4 +162,10 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
    - 解析失敗時**回報 blocked**，嚴禁自行猜測或改用其他副本；特殊位置可用 `EP_SKILLS_ROOT` 臨時覆蓋（同樣會驗證）。
    - **嚴格禁止**直接在專案的 `.<agent>/skills/ep-*`（symlinks）或 `~/.skills-manager/skills/ep-*` 快取中進行編輯。
    - 修改完成後，必須在 `ep-skills` 儲存庫中透過 `scripts/publish-skills.sh` 進行版本提交、推送到遠端 origin，並觸發 Skills Manager 刷新安裝；嚴禁在發布流程中使用強制推送（never force push）。
+
+6. **Tool Call 調用失敗自動降級至直接讀檔原則 (Tool Call Fallback to Direct Markdown Read)**：
+   - 當 Agent 嘗試透過平台工具調用任何技能（如 `skill(...)`、`use_skill(...)` 或 Harness 內建技能呼叫工具）失敗時（包含但不限於：回報 `Skill not found`、受 `disable-model-invocation: true` 限制、未註冊、或環境工具鏈暫時不可用）：
+     - **嚴格禁止行為**：**嚴格禁止**誤判為技能遺失而擅自嘗試 clone、安裝或建立重複目錄；**嚴格禁止**透過 `computer-use` 操作桌面 GUI 去嘗試翻找或修改設定；**嚴格禁止**擅自修改共用技能 frontmatter 或繞過審查關卡。
+     - **強制降級路徑**：**立即無條件自動降級**，改用檔案讀取工具（如 `read_file`、`cat`、`sed` 等）直接讀取該技能目錄下的 `SKILL.md`（及其相關的 `references/`、`playbooks/` 等檔案），將其方法論、規範與工作步驟完整載入至 Context 中，依其指示繼續推動並完成任務。
+     - **透明追蹤標註**：在回覆開頭的 Skill 追蹤行中，如實將該技能標註為讀取降級模式（例如：`` `to-tickets` (direct read fallback) ``）。
 <!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_END -->

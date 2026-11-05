@@ -56,6 +56,7 @@
     "maxParallel": 2,
     "maxQaRetries": 2,
     "maxWakes": 2,
+    "qaSubagentModel": "claude-haiku-5.5",
     "requireSkillLoadForDone": true,
     "requireTicketAndPlanForDispatch": true,
     "retryMinutes": 30,

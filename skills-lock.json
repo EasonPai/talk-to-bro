@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "ep-agentic-brd": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-brd/SKILL.md",
+      "computedHash": "3fa8e6e36e79df1d45cd9c9bfcdb5c451d3727a19f8dfe33392a381a7fe3b4a2"
+    },
+    "ep-agentic-env-setup": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-env-setup/SKILL.md",
+      "computedHash": "d26c55e4b3acb254edcfe5a2001b2380f6d46b5c17c0b3c128b99e242280ecba"
+    },
+    "ep-agentic-kt": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-kt/SKILL.md",
+      "computedHash": "391262079473011d4cedfd21aecff07729b210ef817c6b125ed2c9bfcffeb7b0"
+    },
+    "ep-agentic-orca-team": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-orca-team/SKILL.md",
+      "computedHash": "bd099336c4619fec534ccc6ee932347cfe9b430cb591598d467790b37e1d36a3"
+    },
+    "ep-agentic-product-survey": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-product-survey/SKILL.md",
+      "computedHash": "7f63e02e7105cb990782f51ed54e86c73b88c564bfab300f74ea44052100f4ce"
+    },
+    "ep-agentic-sequencify": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-sequencify/SKILL.md",
+      "computedHash": "e25ccc64d4302283f0cc52b8139a7e8c3eac0aadf566e217c5ffeb72cb06d6de"
+    },
+    "ep-agentic-team-testcase": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-agentic-team-testcase/SKILL.md",
+      "computedHash": "2b166e3c1e3dca95f937d16d6663cdd519113bef92b453823a66dbd43b0d3ba3"
+    },
+    "ep-skill-manager": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-skill-manager/SKILL.md",
+      "computedHash": "6f65fe99687c7929df7d0ada8e9eee2b15ec087146b692ff7a80c685257f1e46"
+    },
+    "ep-skill-unbox": {
+      "source": "EasonPai/ep-skills",
+      "sourceType": "github",
+      "skillPath": "skills/agentic-engineering/ep-skill-unbox/SKILL.md",
+      "computedHash": "0943f443363cc7f4d5826e7347e44027af603f201e96a4cea0236cb08fc5b2d9"
+    }
+  }
+}
