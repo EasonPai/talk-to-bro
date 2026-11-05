@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -126,7 +127,7 @@ async function main() {
   const geminiConn = cdp(geminiTarget.webSocketDebuggerUrl);
 
   const report = {
-    gitRevision: 'f8bd796',
+    gitRevision: execSync('git rev-parse --short HEAD', { cwd: ROOT }).toString().trim(),
     bundleSha256: servedSha256,
     extensionVersion: manifestVersion,
     cdpPort: PORT,
