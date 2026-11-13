@@ -160,8 +160,8 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
 5. **`ep-*` 專屬技能單一維護來源原則 (Source of Truth for `ep-*` Skills)**：
    - 所有 `ep-*` 技能的唯一編輯與維護來源（Source of Truth）一律嚴格限定於 GitHub `EasonPai/ep-skills` 的本機 checkout（位於 `skills/<category>/<skill>/`）。**不寫死路徑**：一律執行 `bash .agents/skills/ep-agentic-env-setup/scripts/resolve-ep-skills-root.sh`（或任一 `.<agent>/skills/ep-agentic-env-setup/scripts/` 下同名腳本），只編輯它印出的目錄。腳本從目前專案往上逐層尋找 `ep-skills/source/ep-skills` 或 `ep-skills`，並驗證 origin 為 `EasonPai/ep-skills` 且含 `scripts/publish-skills.sh`。
    - 解析失敗時**回報 blocked**，嚴禁自行猜測或改用其他副本；特殊位置可用 `EP_SKILLS_ROOT` 臨時覆蓋（同樣會驗證）。
-   - **嚴格禁止**直接在專案的 `.<agent>/skills/ep-*`（symlinks）或 `~/.skills-manager/skills/ep-*` 快取中進行編輯。
-   - 修改完成後，必須在 `ep-skills` 儲存庫中透過 `scripts/publish-skills.sh` 進行版本提交、推送到遠端 origin，並觸發 Skills Manager 刷新安裝；嚴禁在發布流程中使用強制推送（never force push）。
+   - **嚴格禁止**直接在專案的 `.<agent>/skills/ep-*`（symlinks）中進行編輯。
+   - 修改完成後，必須在 `ep-skills` 儲存庫中透過 `scripts/publish-skills.sh` 進行版本提交並推送到遠端 origin；嚴禁在發布流程中使用強制推送（never force push）。
 
 6. **Tool Call 調用失敗自動降級至直接讀檔原則 (Tool Call Fallback to Direct Markdown Read)**：
    - 當 Agent 嘗試透過平台工具調用任何技能（如 `skill(...)`、`use_skill(...)` 或 Harness 內建技能呼叫工具）失敗時（包含但不限於：回報 `Skill not found`、受 `disable-model-invocation: true` 限制、未註冊、或環境工具鏈暫時不可用）：
