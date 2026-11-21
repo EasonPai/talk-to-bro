@@ -217,9 +217,10 @@ function startHandoffCountdown(talk: Talk) {
   handoffNotice.style.display = 'flex';
 
   let remainingMs = 1500;
-  countdownText.textContent = `勇者帶你去找惡龍… (${(remainingMs / 1000).toFixed(1)}s)`;
+  countdownText.textContent = `即將複製內容並切換至 Bro Chat… (${(remainingMs / 1000).toFixed(1)}s)`;
 
   if (cancelBtn) {
+    cancelBtn.style.display = '';
     cancelBtn.onclick = () => {
       clearCountdown();
       handoffNotice.style.display = 'none';
@@ -236,7 +237,7 @@ function startHandoffCountdown(talk: Talk) {
     remainingMs -= 100;
     if (remainingMs <= 0) {
       clearCountdown();
-      countdownText.textContent = '正在切換至惡龍分頁…';
+      countdownText.textContent = '正在切換至 Bro Chat 分頁…';
 
       // 1. Copy Talk text using navigator.clipboard
       let copiedOk = false;
@@ -255,7 +256,7 @@ function startHandoffCountdown(talk: Talk) {
         alreadyCopied: copiedOk
       });
     } else {
-      countdownText.textContent = `勇者帶你去找惡龍… (${(remainingMs / 1000).toFixed(1)}s)`;
+      countdownText.textContent = `即將複製內容並切換至 Bro Chat… (${(remainingMs / 1000).toFixed(1)}s)`;
     }
   }, 100);
 }

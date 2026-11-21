@@ -83,7 +83,7 @@ export function formatSentTime(sentAt: number): string {
 }
 
 export interface FailureView {
-  /** RPG narration shown above (never replacing) userMessage. */
+  /** Calm status chip label shown above (never replacing) userMessage. */
   narration: string;
   userMessage: string;
   badge: string;
@@ -91,20 +91,20 @@ export interface FailureView {
   handoffLine: string | null;
 }
 
-export const CLIPBOARD_COPIED_LINE = '勇者 使用了 剪貼簿！訊息已經複製。';
-export const CLIPBOARD_NOT_COPIED_LINE = '已切換至惡龍分頁（剪貼簿未寫入，內容保留在輸入框）。';
+export const CLIPBOARD_COPIED_LINE = '已將 Talk 內容複製到剪貼簿。';
+export const CLIPBOARD_NOT_COPIED_LINE = '已切換至 Bro Chat 分頁（剪貼簿未寫入，內容保留在輸入框）。';
 
 export function failureNarrationOf(code: FailureCode): string {
   switch (code) {
     case 'TIMEOUT_IDLE':
     case 'TIMEOUT_TOTAL':
-      return '惡龍 已讀不回……';
+      return 'Bro 暫無回應';
     case 'QUOTA_EXHAUSTED':
-      return '惡龍今天見客太多。';
+      return 'Bro Chat 額度已滿';
     case 'NOT_SIGNED_IN':
-      return '勇者還沒登入，進不了城。';
+      return '需要登入 Google';
     default:
-      return '惡龍 無視了勇者……';
+      return '需要你的協助';
   }
 }
 
