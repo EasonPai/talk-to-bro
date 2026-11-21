@@ -13,19 +13,20 @@ const CODES: FailureCode[] = [
 ];
 
 const NARRATION: Partial<Record<FailureCode, string>> = {
-  TIMEOUT_IDLE: '惡龍 已讀不回……',
-  TIMEOUT_TOTAL: '惡龍 已讀不回……',
-  QUOTA_EXHAUSTED: '惡龍今天見客太多。',
-  NOT_SIGNED_IN: '勇者還沒登入，進不了城。'
+  TIMEOUT_IDLE: 'Bro 暫無回應',
+  TIMEOUT_TOTAL: 'Bro 暫無回應',
+  QUOTA_EXHAUSTED: 'Bro Chat 額度已滿',
+  NOT_SIGNED_IN: '需要登入 Google'
 };
 
 test('T4-1: every FailureCode shows its narration above the unchanged userMessage', () => {
   for (const code of CODES) {
     const v = failureViewOf(code);
     assert.equal(v.userMessage, getFailureInfo(code).userMessage, code);
-    assert.equal(v.narration, NARRATION[code] ?? '惡龍 無視了勇者……', code);
+    assert.equal(v.narration, NARRATION[code] ?? '需要你的協助', code);
     assert.notEqual(v.narration, v.userMessage, `${code}: narration must not replace userMessage`);
-    assert.doesNotMatch(v.userMessage, /Pip|老大|小弟/, code);
+    assert.doesNotMatch(v.userMessage, /勇者|惡龍|嚇到|已讀不回|找惡龍|Pip|老大|小弟/, code);
+    assert.doesNotMatch(v.narration, /勇者|惡龍|嚇到|已讀不回|找惡龍|Pip|老大|小弟/, code);
   }
 });
 
@@ -35,7 +36,9 @@ test('T4-2: the clipboard success line follows handoff.copied exactly', () => {
   for (const status of ['done', 'partial'] as const) {
     assert.equal(lines(true, status), CLIPBOARD_COPIED_LINE);
     assert.equal(lines(false, status), CLIPBOARD_NOT_COPIED_LINE);
-    assert.doesNotMatch(lines(false, status)!, /訊息已經複製/);
+    assert.doesNotMatch(lines(false, status)!, /已將 Talk 內容複製/);
+    assert.doesNotMatch(lines(true, status)!, /勇者|惡龍/);
+    assert.doesNotMatch(lines(false, status)!, /勇者|惡龍/);
   }
   for (const status of ['pending', 'deferred', 'cancelled'] as const) {
     assert.equal(failureViewOf('TIMEOUT_IDLE', { status, copied: true, focused: false }).handoffLine, null);

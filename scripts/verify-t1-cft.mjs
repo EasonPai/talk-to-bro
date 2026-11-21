@@ -736,7 +736,7 @@ function parseFramePreamble(buffer) {
       const deferredNotice = document.getElementById('deferred-notice');
       if (errorContainer && errorMsg && deferredNotice) {
         errorContainer.style.display = 'block';
-        errorMsg.textContent = 'TIMEOUT_TOTAL: 惡龍太久沒回覆';
+        errorMsg.textContent = 'TIMEOUT_TOTAL: 等待超過 3 分鐘，Bro 尚未完成回覆。';
         deferredNotice.style.display = 'block';
       }
     })()`);

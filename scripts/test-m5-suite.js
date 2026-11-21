@@ -421,20 +421,20 @@ async function main() {
     // 1. FAULT INJECTION TEST ACROSS 14 FAILURE CODES (real submit; no Bro Chat configured => no tab movement)
     console.log('1. Testing Fault Injection across all 14 FailureCodes via debug:v1.forceFailure + real submit...');
     const ALL_14_CODES = [
-      { code: 'NO_BRO_CHAT', mood: '嚇到', expectedMsg: '勇者還沒告訴惡龍在哪' },
-      { code: 'BRO_CHAT_MISSING', mood: '嚇到', expectedMsg: '惡龍搬家了' },
-      { code: 'NOT_SIGNED_IN', mood: '嚇到', expectedMsg: '你還沒登入 Google' },
-      { code: 'INPUT_NOT_FOUND', mood: '嚇到', expectedMsg: '找不到惡龍的耳朵' },
-      { code: 'EDITOR_BUSY', mood: '嚇到', expectedMsg: '惡龍那邊正忙' },
-      { code: 'SUBMIT_UNCONFIRMED', mood: '嚇到', expectedMsg: '話好像沒遞到' },
-      { code: 'TIMEOUT_IDLE', mood: '已讀不回', expectedMsg: '惡龍 30 秒沒出聲。' },
-      { code: 'TIMEOUT_TOTAL', mood: '已讀不回', expectedMsg: '等了 3 分鐘，惡龍還沒講完。' },
-      { code: 'QUOTA_EXHAUSTED', mood: '嚇到', expectedMsg: '惡龍今天見客見太多' },
-      { code: 'TAB_UNRESPONSIVE', mood: '嚇到', expectedMsg: '惡龍的門被 Chrome 關起來了。' },
-      { code: 'TAB_CLOSED', mood: '嚇到', expectedMsg: 'Bro Chat 分頁被關掉了。' },
-      { code: 'EXTRACT_FAILED', mood: '嚇到', expectedMsg: '惡龍講完了，但勇者抄不下來。' },
-      { code: 'INTERRUPTED', mood: '嚇到', expectedMsg: 'Chrome 重開，勇者半路被叫回來。' },
-      { code: 'INTERNAL', mood: '嚇到', expectedMsg: '勇者迷路了。' }
+      { code: 'NO_BRO_CHAT', mood: '需要協助', expectedMsg: '尚未設定 Bro Chat 網址' },
+      { code: 'BRO_CHAT_MISSING', mood: '需要協助', expectedMsg: '找不到設定的 Bro Chat 分頁或網址已失效' },
+      { code: 'NOT_SIGNED_IN', mood: '需要協助', expectedMsg: '尚未登入 Google 帳號' },
+      { code: 'INPUT_NOT_FOUND', mood: '需要協助', expectedMsg: '找不到 Gemini 輸入框' },
+      { code: 'EDITOR_BUSY', mood: '需要協助', expectedMsg: 'Bro Chat 目前正在回覆中' },
+      { code: 'SUBMIT_UNCONFIRMED', mood: '需要協助', expectedMsg: '無法確認 Talk 是否已送出' },
+      { code: 'TIMEOUT_IDLE', mood: '暫無回應', expectedMsg: 'Bro 超過 30 秒沒有新回覆。' },
+      { code: 'TIMEOUT_TOTAL', mood: '暫無回應', expectedMsg: '等待超過 3 分鐘，Bro 尚未完成回覆。' },
+      { code: 'QUOTA_EXHAUSTED', mood: '需要協助', expectedMsg: 'Gemini 目前已達使用上限' },
+      { code: 'TAB_UNRESPONSIVE', mood: '需要協助', expectedMsg: 'Bro Chat 分頁暫時無回應' },
+      { code: 'TAB_CLOSED', mood: '需要協助', expectedMsg: 'Bro Chat 分頁已關閉。' },
+      { code: 'EXTRACT_FAILED', mood: '需要協助', expectedMsg: 'Bro 已完成回覆，但無法擷取內容' },
+      { code: 'INTERRUPTED', mood: '需要協助', expectedMsg: '瀏覽器已重啟，上一次的 Talk 尚未完成。' },
+      { code: 'INTERNAL', mood: '需要協助', expectedMsg: '發生未預期的內部錯誤' }
     ];
 
     await resetRuntime();
@@ -490,7 +490,7 @@ async function main() {
       const countdownText = document.getElementById('countdown-text');
       const cancelBtn = document.getElementById('cancel-handoff-btn');
 
-      await waitFor(() => handoffNotice && handoffNotice.style.display !== 'none' && countdownText?.textContent.includes('勇者帶你去找惡龍'));
+      await waitFor(() => handoffNotice && handoffNotice.style.display !== 'none' && countdownText?.textContent.includes('即將複製內容並切換至 Bro Chat'));
       const initialVisible = !!(handoffNotice && handoffNotice.style.display !== 'none');
       const initialText = countdownText?.textContent;
 
@@ -510,7 +510,7 @@ async function main() {
     });
 
     assert.ok(countdownResult.initialVisible, 'Handoff notice must be visible on pending failure');
-    assert.ok(countdownResult.initialText.includes('勇者帶你去找惡龍'), 'Countdown banner must display hero message');
+    assert.ok(countdownResult.initialText.includes('即將複製內容並切換至 Bro Chat'), 'Countdown banner must display calm handoff message');
     assert.equal(countdownResult.cancelledStatus, 'cancelled', 'Cancelling must persist status = cancelled');
     console.log('   ✓ Countdown started and cancel button persisted status = "cancelled".\n');
 
@@ -654,8 +654,8 @@ async function main() {
     })()`);
     assert.ok(deferredUi.isDeferredNoticeVisible, 'Deferred notice container must be visible');
     assert.ok(deferredUi.isCountdownHidden, 'Automatic countdown must be hidden for deferred handoff');
-    assert.equal(deferredUi.gotoBtnText, '去找惡龍 ⏎', 'Button must prompt "去找惡龍 ⏎"');
-    assert.ok(deferredUi.errorMsg.includes('Chrome 重開，勇者半路被叫回來。'), 'Error message must explain browser restart');
+    assert.equal(deferredUi.gotoBtnText, '前往 Bro Chat ⏎', 'Button must prompt "前往 Bro Chat ⏎"');
+    assert.ok(deferredUi.errorMsg.includes('瀏覽器已重啟，上一次的 Talk 尚未完成。'), 'Error message must explain browser restart');
 
     await evalIn(wakePopup.cdp, `document.getElementById('goto-bro-btn').click()`);
     const deferredHandoff = await waitHandoffSettled(interrupted.id);
@@ -663,7 +663,7 @@ async function main() {
     assert.equal(await getActiveTabId(), broTabId, 'Explicit button must switch to the Bro Chat tab');
     assert.equal(await readClipboard(), deferredText, 'Explicit button must put the Talk text on the clipboard');
     await closeTab(wakePopup);
-    console.log('   ✓ "去找惡龍 ⏎" completed the handoff: clipboard written and Bro Chat tab active.\n');
+    console.log('   ✓ "前往 Bro Chat ⏎" completed the handoff: clipboard written and Bro Chat tab active.\n');
   } finally {
     await restoreEnvironment();
   }
