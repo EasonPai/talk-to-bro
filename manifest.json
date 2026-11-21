@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Talk To Bro Personally",
-  "version": "0.1.12",
+  "version": "0.2.0",
   "description": "Chrome MV3 Extension for Talk To Bro Personally",
   "minimum_chrome_version": "141",
   "permissions": [
@@ -36,7 +36,7 @@
       "suggested_key": {
         "default": "Alt+Shift+B"
       },
-      "description": "叫 Pip 出來"
+      "description": "開啟 Talk To Bro"
     }
   },
   "content_security_policy": {

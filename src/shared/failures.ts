@@ -1,7 +1,7 @@
 // src/shared/failures.ts
 import type { FailureCode, Talk, TalkStage } from './types.ts';
 
-export type FailureMood = '嚇到' | '已讀不回';
+export type FailureMood = '需要協助' | '暫無回應';
 export type HeroState = 'door' | 'waiting' | 'boss_speaks' | 'scared' | 'ignored';
 
 export interface FailureInfo {
@@ -23,126 +23,126 @@ export function getFailureInfo(code: FailureCode): FailureInfo {
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '勇者還沒告訴惡龍在哪，先去設定 Bro Chat。',
+        userMessage: '尚未設定 Bro Chat 網址，請先前往設定。',
         retryable: false
       };
     case 'BRO_CHAT_MISSING':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '惡龍搬家了，Bro Chat 網址好像失效。',
+        userMessage: '找不到設定的 Bro Chat 分頁或網址已失效，請檢查設定。',
         retryable: true
       };
     case 'NOT_SIGNED_IN':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '你還沒登入 Google，勇者進不去。',
+        userMessage: '尚未登入 Google 帳號，請先登入 Bro Chat。',
         retryable: true
       };
     case 'INPUT_NOT_FOUND':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '找不到惡龍的耳朵（Gemini 可能改版了）。',
+        userMessage: '找不到 Gemini 輸入框（頁面可能已改版或尚未載入完成）。',
         retryable: true
       };
     case 'EDITOR_BUSY':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '惡龍那邊正忙，勇者不敢打斷。',
+        userMessage: 'Bro Chat 目前正在回覆中，請稍候再送出。',
         retryable: true
       };
     case 'SUBMIT_UNCONFIRMED':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '話好像沒遞到——也可能已經送出，先看一下有沒有重複再貼。',
+        userMessage: '無法確認 Talk 是否已送出，請先切至 Bro Chat 檢查是否已有重複訊息。',
         retryable: false
       };
     case 'TIMEOUT_IDLE':
       return {
         code,
         defaultStage: 'read',
-        moodName: '已讀不回',
+        moodName: '暫無回應',
         heroState: 'ignored',
-        userMessage: '惡龍 30 秒沒出聲。',
+        userMessage: 'Bro 超過 30 秒沒有新回覆。',
         retryable: true
       };
     case 'TIMEOUT_TOTAL':
       return {
         code,
         defaultStage: 'read',
-        moodName: '已讀不回',
+        moodName: '暫無回應',
         heroState: 'ignored',
-        userMessage: '等了 3 分鐘，惡龍還沒講完。',
+        userMessage: '等待超過 3 分鐘，Bro 尚未完成回覆。',
         retryable: true
       };
     case 'QUOTA_EXHAUSTED':
       return {
         code,
         defaultStage: 'read',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '惡龍今天見客見太多（額度用完）。',
+        userMessage: 'Gemini 目前已達使用上限，請稍後再試。',
         retryable: false
       };
     case 'TAB_UNRESPONSIVE':
       return {
         code,
         defaultStage: 'read',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '惡龍的門被 Chrome 關起來了。',
+        userMessage: 'Bro Chat 分頁暫時無回應，請檢查分頁狀態。',
         retryable: true
       };
     case 'TAB_CLOSED':
       return {
         code,
         defaultStage: 'read',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: 'Bro Chat 分頁被關掉了。',
+        userMessage: 'Bro Chat 分頁已關閉。',
         retryable: true
       };
     case 'EXTRACT_FAILED':
       return {
         code,
         defaultStage: 'read',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '惡龍講完了，但勇者抄不下來。',
+        userMessage: 'Bro 已完成回覆，但無法擷取內容，請切至 Bro Chat 查看。',
         retryable: true
       };
     case 'INTERRUPTED':
       return {
         code,
         defaultStage: 'read',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: 'Chrome 重開，勇者半路被叫回來。',
+        userMessage: '瀏覽器已重啟，上一次的 Talk 尚未完成。',
         retryable: true
       };
     case 'INTERNAL':
       return {
         code,
         defaultStage: 'send',
-        moodName: '嚇到',
+        moodName: '需要協助',
         heroState: 'scared',
-        userMessage: '勇者迷路了。',
+        userMessage: '發生未預期的內部錯誤，請稍後再試或前往 Bro Chat。',
         retryable: true
       };
     default: {
@@ -173,7 +173,7 @@ export function stageOfFailure(
 }
 
 /**
- * Derives the active hero (勇者) emotional / display state from the Talk state.
+ * Derives the active display state from the Talk state.
  */
 export function heroStateOf(t: Talk | null): HeroState {
   if (!t) return 'door';

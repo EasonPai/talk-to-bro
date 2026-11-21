@@ -408,8 +408,8 @@ export function showHandoffNotice(message: string) {
       }
     </style>
     <div class="toast">
-      <span class="badge">Pip</span>
-      <span class="msg">Pip 說：${message}</span>
+      <span class="badge">Talk To Bro</span>
+      <span class="msg">${message}</span>
       <button class="close-btn" aria-label="Close">✕</button>
     </div>
   `;

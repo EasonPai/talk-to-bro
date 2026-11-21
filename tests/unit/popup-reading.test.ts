@@ -110,11 +110,50 @@ test('popup.html contains reading-toggle-btn with correct ARIA attributes', () =
   assert.match(POPUP_HTML, />展開閱讀<\/button>/);
 });
 
-test('popup.html contains pin-toggle-btn with accessible markup (T-1)', () => {
+test('popup.html contains Tidal Calm loader, answer-meta caption, and pin-toggle-btn', () => {
+  assert.match(POPUP_HTML, /id="chat-typing"[^>]*class="[^"]*\bloader\b/);
+  assert.match(POPUP_HTML, /完整回答可捲動閱讀 · Source: Bro Chat/);
   assert.match(POPUP_HTML, /<button\s+id="pin-toggle-btn"[^>]*class="pin-toggle-btn"/);
   assert.match(POPUP_HTML, /id="pin-toggle-text"/);
   assert.match(POPUP_HTML, /aria-label="釘選至側邊欄"/);
   assert.match(POPUP_HTML, /title="釘選至側邊欄"/);
+});
+
+test('Tidal Calm status chip copy in idle, waiting, and done states', async () => {
+  const env = createMockEnvironment();
+  const pipMood = { textContent: '' };
+  const origGetById = env.doc.getElementById;
+  (env.doc as any).getElementById = (id: string) => (id === 'pip-mood' ? pipMood : origGetById(id));
+  const origDoc = (globalThis as any).document;
+  const origWin = (globalThis as any).window;
+  (globalThis as any).document = env.doc;
+  (globalThis as any).window = env.win;
+
+  try {
+    const popup = await import('../../src/popup/popup.ts');
+    popup.renderTalkState(null);
+    assert.equal(pipMood.textContent, '準備好了');
+    assert.equal(env.body.dataset.phase, 'idle');
+
+    popup.renderTalkState({
+      id: 'talk-w',
+      text: 'serendipity',
+      phase: 'waiting',
+      createdAt: 1,
+      updatedAt: 1,
+      sentAt: 1,
+      phaseDeadlineAt: null
+    });
+    assert.equal(pipMood.textContent, 'Bro 正在回覆');
+    assert.equal(env.body.dataset.phase, 'waiting');
+
+    popup.renderTalkState(createDoneTalk('serendipity', '# serendipity\n\n意外發現'));
+    assert.equal(pipMood.textContent, 'Bro 已回覆');
+    assert.equal(env.body.dataset.phase, 'done');
+  } finally {
+    (globalThis as any).document = origDoc;
+    (globalThis as any).window = origWin;
+  }
 });
 
 test('M1: reading-toggle-btn only appears for done state with answerMarkdown and toggles correctly', async () => {

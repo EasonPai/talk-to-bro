@@ -131,7 +131,7 @@ try {
       sameKeysAsPre: JSON.stringify(Object.keys(cur).sort()) === JSON.stringify(Object.keys(preLocal).sort()),
       logUnchanged: JSON.stringify(cur['runtime:v1']?.logByTalkId ?? {}) === JSON.stringify(preLocal['runtime:v1']?.logByTalkId ?? {}),
       lastTalkStillFixture: cur['runtime:v1']?.lastTalk?.id === afterWrite['runtime:v1'].lastTalk.id,
-      noPreviousSummary: !/previousSummary|冒險之書|上一則/.test(nowStore), leak: (nowStore.match(/.{30}(previousSummary|冒險之書|上一則).{30}/) ?? [null])[0]
+      noPreviousSummary: !/previousSummary|前次 Talk|冒險之書|上一則/.test(nowStore), leak: (nowStore.match(/.{30}(previousSummary|前次 Talk|冒險之書|上一則).{30}/) ?? [null])[0]
     };
     const L = report.collapsed, E = report.expanded, R = report.recollapsed;
     const ringOk = report.tabOrder.every((t) => t.ring);
@@ -139,7 +139,7 @@ try {
     const orderOk = ids.join() === 'previous-card,talk-input,copy-btn,answer-content,gear-btn';
     const layoutOk = [L, E, R].every((m) => m.overlaps.length === 0 && !m.pageScroll && m.containerHeight <= 600.5) && (zoom !== 1 || L.innerWidth === 400);
     const ok = report.beforeSubmit === false && report.submitMsgs.length === 1 && report.submitMsgs[0].action === 'talk/submit'
-      && L.cardVisible && L.cardTag === 'BUTTON' && L.expanded === 'false' && !L.detailVisible && L.cardLabel.startsWith('📖 冒險之書・上一則 ') && L.cardLabel.includes(`「${Array.from(FIRST_TEXT).slice(0, 40).join('')}」`)
+      && L.cardVisible && L.cardTag === 'BUTTON' && L.expanded === 'false' && !L.detailVisible && L.cardLabel.startsWith('前次 Talk・') && L.cardLabel.includes(`「${Array.from(FIRST_TEXT).slice(0, 40).join('')}」`)
       && E.expanded === 'true' && E.detailVisible && E.detailText === Array.from(FIRST_TEXT).slice(0, 40).join('') && E.answerLines.length === 3 && !E.answerLines.join('').includes('第四行')
       && R.expanded === 'false' && !R.detailVisible && L.narrationRole === 'status' && L.narrationLive === 'polite'
       && orderOk && ringOk && layoutOk

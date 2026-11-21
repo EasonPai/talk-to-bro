@@ -2,31 +2,41 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>Talk To Bro Personally - Options</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Talk To Bro - 設定與偏好</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <div class="container">
-    <header class="header">
+    <header class="hero">
+      <svg class="hero-wave" viewBox="0 0 680 44" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 24 C 160 6, 300 40, 465 20 C 560 9, 630 18, 680 26 L 680 44 L 0 44 Z" fill="var(--wave-1)"/>
+        <path d="M0 32 C 185 18, 355 42, 535 26 C 605 20, 650 24, 680 30 L 680 44 L 0 44 Z" fill="var(--wave-2)"/>
+      </svg>
       <div class="logo-group">
-        <span class="pip-avatar">🦊</span>
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 6h16v11H9l-5 3z"/>
+            <path d="M8 11h8M8 14h5"/>
+          </svg>
+        </div>
         <div>
-          <h1>Talk To Bro Personally</h1>
-          <p class="subtitle">設定與老大（Gemini）專屬對話的秘密基地</p>
+          <h1>Talk To Bro</h1>
+          <p class="subtitle">連接你已啟用翻譯 Skill 的 Bro Chat 專屬對話</p>
         </div>
       </div>
     </header>
 
     <main class="main-content">
       <section class="card">
-        <h2>Bro Chat 網址設定 (F6)</h2>
+        <h2>Bro Chat 網址設定</h2>
         <p class="desc">
           請提供已啟用翻譯 Skill 的 Gemini 對話完整網址（例如：<code>https://gemini.google.com/app/4d870f290f0c5975</code>）。
-          Pip 會在背景為你把單字悄悄遞給老大。
+          Talk To Bro 會在背景將內容送至 Bro Chat 並取回完整回答。
         </p>
 
         <div class="form-group">
-          <label for="bro-url-input">Bro Chat 完整網址：</label>
+          <label for="bro-url-input">Bro Chat 完整網址</label>
           <input
             type="url"
             id="bro-url-input"
@@ -34,18 +44,33 @@
             autocomplete="off"
             spellcheck="false"
           >
-          <div id="url-status" class="status-msg"></div>
+          <div id="url-status" class="status-msg" role="status" aria-live="polite"></div>
         </div>
 
         <div class="button-row">
-          <button id="save-btn" class="btn primary">儲存設定</button>
-          <button id="check-ready-btn" class="btn secondary">Pip 去敲門 (測試連線)</button>
+          <button id="save-btn" class="btn primary" type="button">儲存設定</button>
+          <button id="check-ready-btn" class="btn secondary" type="button">測試連線</button>
+        </div>
+      </section>
+
+      <section class="card stats-card" aria-label="Talk Log 統計">
+        <h2>Talk Log 統計</h2>
+        <p class="desc">僅統計已完成的成功、送出失敗與讀取失敗次數，不記錄任何對話內容。</p>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">送得進率</span>
+            <strong id="opt-stat-sent-in" class="stat-value">尚無樣本</strong>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">讀得回率</span>
+            <strong id="opt-stat-read-back" class="stat-value">尚無樣本</strong>
+          </div>
         </div>
       </section>
 
       <section class="card shortcuts-card">
-        <h2>全域快捷鍵 (F1)</h2>
-        <p class="desc">預設呼叫 Pip 的全域快捷鍵為：</p>
+        <h2>全域快捷鍵</h2>
+        <p class="desc">預設開啟 Talk To Bro 的全域快捷鍵為：</p>
         <div class="shortcut-badge">
           <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>
         </div>
@@ -54,7 +79,7 @@
     </main>
 
     <footer class="footer">
-      <span>Talk To Bro Personally v0.1.0 • Built with Roguelike Spirit</span>
+      <span>Talk To Bro v0.2.0</span>
     </footer>
   </div>
   <script type="module" src="options.js"></script>

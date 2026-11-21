@@ -61,7 +61,7 @@ chrome.alarms?.onAlarm.addListener(async (alarm) => {
 // Message hub
 chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'PING') {
-    sendResponse({ ok: true, version: '0.1.0' });
+    sendResponse({ ok: true, version: '0.2.0' });
     return true;
   }
 
