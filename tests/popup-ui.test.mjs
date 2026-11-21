@@ -101,7 +101,27 @@ before(async () => {
         onZoomChange: { addListener: () => {} }
       },
       storage: {
-        local: { get: async () => ({ 'runtime:v1': { lastTalk: null } }) },
+        local: {
+          __data: { 'runtime:v1': { lastTalk: null, logByTalkId: {
+            t1: { result: 'success', at: 1 },
+            t2: { result: 'read_failed', at: 2 },
+            t3: { result: 'send_failed', at: 3 },
+            t4: { result: 'success', at: 4 }
+          } } },
+          get: async (keys) => {
+            const d = window.chrome.storage.local.__data;
+            if (Array.isArray(keys)) {
+              const out = {};
+              for (const k of keys) out[k] = d[k];
+              return out;
+            }
+            if (typeof keys === 'string') return { [keys]: d[keys] };
+            return { ...d };
+          },
+          set: async (obj) => {
+            Object.assign(window.chrome.storage.local.__data, obj);
+          }
+        },
         onChanged: { addListener: (listener) => { window.testStorageChanged = listener; } }
       }
     };
@@ -300,4 +320,59 @@ test('Enter and IME behavior, Shift+Enter, keyboard focus and the input limit ar
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
   assert.equal(await evaluate('document.activeElement.id'), 'pin-toggle-btn');
   assert.equal(await evaluate(`document.getElementById('talk-input').maxLength`), 300);
+});
+
+test('Embedded #settings toggles in-place, validates & saves Bro Chat URL, renders real Talk Log stats, and returns focus', async () => {
+  await render(null);
+  // Open via footer button
+  await evaluate(`document.getElementById('foot-settings-btn').click()`);
+  await new Promise((r) => setTimeout(r, 60));
+  const opened = await evaluate(`({
+    mainHidden: document.getElementById('mainView').hidden,
+    settingsHidden: document.getElementById('settings').hidden,
+    footHidden: document.getElementById('foot-settings-btn').hidden,
+    sentIn: document.getElementById('stat-sent-in').textContent,
+    readBack: document.getElementById('stat-read-back').textContent,
+    focus: document.activeElement.id,
+    settingsBottom: document.getElementById('settings').getBoundingClientRect().bottom,
+    footTop: document.querySelector('.popup-footer').getBoundingClientRect().top
+  })`);
+  assert.equal(opened.mainHidden, true);
+  assert.equal(opened.settingsHidden, false);
+  assert.equal(opened.footHidden, true);
+  assert.equal(opened.sentIn, '3/4 (75.0%)');
+  assert.equal(opened.readBack, '2/3 (66.7%)');
+  assert.equal(opened.focus, 'settings-url-input');
+  assert.ok(opened.settingsBottom <= opened.footTop + 0.5, 'settings must not overlap footer');
+
+  // Invalid URL shows error
+  await evaluate(`(() => {
+    const inp = document.getElementById('settings-url-input');
+    inp.value = 'http://evil.example/app/123';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  assert.equal(await evaluate(`document.getElementById('settings-url-status').getAttribute('data-tone')`), 'error');
+
+  // Valid URL saves to settings:v1
+  await evaluate(`(() => {
+    const inp = document.getElementById('settings-url-input');
+    inp.value = 'https://gemini.google.com/app/4d870f290f0c5975?hl=zh';
+    document.getElementById('settings-save-btn').click();
+  })()`);
+  await new Promise((r) => setTimeout(r, 60));
+  const saved = await evaluate(`window.chrome.storage.local.__data['settings:v1']`);
+  assert.equal(saved.broChatUrl, 'https://gemini.google.com/app/4d870f290f0c5975');
+  assert.equal(await evaluate(`document.getElementById('settings-url-status').getAttribute('data-tone')`), 'success');
+  await capture('settings-open-400');
+
+  // Back returns to mainView and focuses #talk-input
+  await evaluate(`document.getElementById('settings-back-btn').click()`);
+  const closed = await evaluate(`({
+    mainHidden: document.getElementById('mainView').hidden,
+    settingsHidden: document.getElementById('settings').hidden,
+    focus: document.activeElement.id
+  })`);
+  assert.equal(closed.mainHidden, false);
+  assert.equal(closed.settingsHidden, true);
+  assert.equal(closed.focus, 'talk-input');
 });

@@ -1,7 +1,9 @@
 // src/popup/view-state.ts
 // Pure, display-only view model for T2 (sending / waiting). Reads Talk fields; never changes timeouts or phases.
-import type { FailureCode, Talk, TalkHandoff } from '../shared/types.ts';
+import type { FailureCode, LogEntry, Talk, TalkHandoff } from '../shared/types.ts';
 import { getFailureInfo } from '../shared/failures.ts';
+import { computeStats } from '../shared/stats.ts';
+import { validateBroChatUrl } from '../shared/validate.ts';
 
 // Mirrors tick.ts (TOTAL_TIMEOUT_MS / IDLE_TIMEOUT_MS) for display only.
 export const HUD_PATIENCE_TOTAL_MS = 180_000;
@@ -176,4 +178,53 @@ export function isTalkBusy(talk: Talk | null | undefined): boolean {
 /** #50: focus moves to the input only on a busy-to-terminal transition seen in this popup. */
 export function shouldFocusInput(wasBusy: boolean, next: Talk | null): boolean {
   return draftActionOf(wasBusy, next) === 'clear';
+}
+
+export interface SettingsStatsView {
+  sentInRate: string;
+  readBackRate: string;
+  total: number;
+}
+
+/** Formats Talk Log reliability metrics for the embedded settings and options views. */
+export function statsViewOf(logByTalkId: Record<string, LogEntry> | null | undefined): SettingsStatsView {
+  const stats = computeStats(logByTalkId ?? {});
+  return {
+    sentInRate: stats.formattedSentInRate,
+    readBackRate: stats.formattedReadBackRate,
+    total: stats.total
+  };
+}
+
+export interface SettingsUrlFeedback {
+  valid: boolean;
+  message: string;
+  normalizedUrl?: string;
+  tone: 'info' | 'success' | 'error';
+}
+
+/** Real-time URL validation feedback for input typing (empty input stays neutral). */
+export function settingsUrlFeedbackOf(rawUrl: string): SettingsUrlFeedback {
+  if (rawUrl.trim().length === 0) {
+    return { valid: false, message: '', tone: 'info' };
+  }
+  return settingsSaveFeedbackOf(rawUrl);
+}
+
+/** Submit-time URL validation feedback (empty input reports an error). */
+export function settingsSaveFeedbackOf(rawUrl: string): SettingsUrlFeedback {
+  const res = validateBroChatUrl(rawUrl);
+  if (!res.valid || !res.normalizedUrl) {
+    return {
+      valid: false,
+      message: res.message || '無效的 URL',
+      tone: 'error'
+    };
+  }
+  return {
+    valid: true,
+    message: `格式正確 · Chat ID: ${res.ref?.chatId ?? ''}`,
+    normalizedUrl: res.normalizedUrl,
+    tone: 'success'
+  };
 }

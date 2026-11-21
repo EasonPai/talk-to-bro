@@ -30,19 +30,19 @@
             </svg>
             <span id="pin-toggle-text">釘選</span>
           </button>
-          <a id="settings-btn" href="options.html" target="_blank" class="gear-btn icon-btn" title="設定 Bro Chat" aria-label="設定 Bro Chat">
+          <button id="settings-btn" type="button" class="gear-btn icon-btn" title="設定與偏好" aria-label="設定 Bro Chat" aria-expanded="false" aria-controls="settings">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="3"/>
               <path d="M19 12a7 7 0 0 0-.1-1.2l1.6-1.3-1.5-2.6-2 .6a7 7 0 0 0-2-1.2L14.5 4h-3l-.5 2.3a7 7 0 0 0-2 1.2l-2-.6-1.5 2.6 1.6 1.3a7 7 0 0 0 0 2.4l-1.6 1.3 1.5 2.6 2-.6a7 7 0 0 0 2 1.2l.5 2.3h3l.5-2.3a7 7 0 0 0 2-1.2l2 .6 1.5-2.6-1.6-1.3A7 7 0 0 0 19 12Z"/>
             </svg>
-          </a>
+          </button>
         </div>
       </div>
       <h2 class="hero-title">Hey, Bro.</h2>
       <p class="hero-sub">一個字，也值得好好弄懂。</p>
     </header>
 
-    <main class="popup-main">
+    <main id="mainView" class="popup-main">
       <button id="previous-card" class="previous-card" type="button" aria-expanded="false" aria-controls="previous-detail" hidden>
         <span id="previous-label" class="previous-label"></span>
       </button>
@@ -122,10 +122,54 @@
       </div>
     </main>
 
+    <section id="settings" class="popup-main settings" hidden aria-label="設定與偏好">
+      <div class="settings-head">
+        <h2>設定與偏好</h2>
+        <p class="settings-desc">連接你已啟用翻譯 Skill 的 Bro Chat。</p>
+      </div>
+
+      <div class="settings-field">
+        <label for="settings-url-input">Bro Chat URL</label>
+        <input
+          id="settings-url-input"
+          class="settings-input"
+          type="url"
+          placeholder="https://gemini.google.com/app/..."
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <div id="settings-url-status" class="settings-status" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="settings-actions">
+        <button id="settings-save-btn" class="btn-primary" type="button">儲存設定</button>
+        <button id="settings-test-btn" class="btn-secondary" type="button">測試連線</button>
+      </div>
+
+      <div class="settings-stats" aria-label="Talk Log 統計">
+        <div class="settings-stats-title">Talk Log 統計</div>
+        <div class="settings-stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">送得進率</span>
+            <strong id="stat-sent-in" class="stat-value">尚無樣本</strong>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">讀得回率</span>
+            <strong id="stat-read-back" class="stat-value">尚無樣本</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-nav">
+        <button id="settings-back-btn" class="btn-secondary" type="button">返回</button>
+        <a id="settings-open-options-link" class="settings-ext-link" href="options.html" target="_blank" rel="noopener">完整設定頁 ↗</a>
+      </div>
+    </section>
+
     <footer class="popup-footer">
       <span id="source-line" class="source-line" hidden>Source: Bro Chat</span>
       <span>一個 Talk，一次完整的回答。</span>
-      <span><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></span>
+      <button id="foot-settings-btn" class="foot-settings-btn" type="button">設定與偏好 ↗</button>
     </footer>
 
     <div id="speech-toast" class="speech-toast" role="status" aria-live="polite" style="display: none;"></div>

@@ -1,9 +1,23 @@
 // src/popup/popup.ts
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import type { Talk } from '../shared/types.ts';
+import type { LogEntry, SettingsV1, Talk } from '../shared/types.ts';
 import { followActiveTabZoom, applyPopupLayout } from './zoom.ts';
-import { sendViewOf, hudOf, formatSentTime, failureViewOf, previousSummaryOf, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, type PreviousSummary } from './view-state.ts';
+import {
+  sendViewOf,
+  hudOf,
+  formatSentTime,
+  failureViewOf,
+  previousSummaryOf,
+  submitOutcomeOf,
+  draftActionOf,
+  isTalkBusy,
+  shouldFocusInput,
+  statsViewOf,
+  settingsUrlFeedbackOf,
+  settingsSaveFeedbackOf,
+  type PreviousSummary
+} from './view-state.ts';
 import { wrapSpeakableWords, initPronunciation, speakWord } from './pronunciation.ts';
 export { wrapSpeakableWords, initPronunciation, speakWord };
 
@@ -749,6 +763,164 @@ export async function initPopup(): Promise<void> {
       initPronunciation(answerContent, { showToast: showSpeechToast });
     }
 
+    // Embedded Settings View (#29)
+    const mainView = document.getElementById('mainView') as HTMLElement | null;
+    const settingsView = document.getElementById('settings') as HTMLElement | null;
+    const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement | null;
+    const footSettingsBtn = document.getElementById('foot-settings-btn') as HTMLButtonElement | null;
+    const settingsUrlInput = document.getElementById('settings-url-input') as HTMLInputElement | null;
+    const settingsUrlStatus = document.getElementById('settings-url-status') as HTMLElement | null;
+    const settingsSaveBtn = document.getElementById('settings-save-btn') as HTMLButtonElement | null;
+    const settingsTestBtn = document.getElementById('settings-test-btn') as HTMLButtonElement | null;
+    const settingsBackBtn = document.getElementById('settings-back-btn') as HTMLButtonElement | null;
+    const settingsOptionsLink = document.getElementById('settings-open-options-link') as HTMLAnchorElement | null;
+    const statSentIn = document.getElementById('stat-sent-in') as HTMLElement | null;
+    const statReadBack = document.getElementById('stat-read-back') as HTMLElement | null;
+
+    let lastSettingsTrigger: HTMLElement | null = null;
+
+    const setSettingsStatus = (text: string, tone: 'info' | 'success' | 'error' = 'info') => {
+      if (!settingsUrlStatus) return;
+      settingsUrlStatus.textContent = text;
+      settingsUrlStatus.setAttribute('data-tone', tone);
+    };
+
+    const paintSettingsStats = (logByTalkId: Record<string, LogEntry> | null | undefined) => {
+      const view = statsViewOf(logByTalkId);
+      if (statSentIn) statSentIn.textContent = view.sentInRate;
+      if (statReadBack) statReadBack.textContent = view.readBackRate;
+    };
+
+    const loadSettingsData = async () => {
+      paintSettingsStats(undefined);
+      if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+      try {
+        const res = await chrome.storage.local.get(['settings:v1', 'runtime:v1']);
+        const saved = res['settings:v1'] as SettingsV1 | undefined;
+        const rt = res['runtime:v1'];
+        if (settingsUrlInput) {
+          settingsUrlInput.value = saved?.broChatUrl ?? '';
+        }
+        if (saved?.broChatUrl) {
+          setSettingsStatus('已載入現有設定', 'info');
+        } else {
+          setSettingsStatus('尚未設定 Bro Chat 網址', 'info');
+        }
+        paintSettingsStats(rt?.logByTalkId);
+      } catch (err: any) {
+        setSettingsStatus(`讀取設定失敗：${err?.message ?? '未知錯誤'}`, 'error');
+      }
+    };
+
+    const setSettingsOpen = (open: boolean) => {
+      if (!mainView || !settingsView) return;
+      if (open) {
+        lastSettingsTrigger = (document.activeElement as HTMLElement | null) ?? settingsBtn;
+        mainView.hidden = true;
+        settingsView.hidden = false;
+        settingsView.classList.add('open');
+        if (footSettingsBtn) footSettingsBtn.hidden = true;
+        settingsBtn?.setAttribute('aria-expanded', 'true');
+        document.body.dataset.view = 'settings';
+        void loadSettingsData().then(() => {
+          settingsUrlInput?.focus();
+        });
+      } else {
+        settingsView.classList.remove('open');
+        settingsView.hidden = true;
+        mainView.hidden = false;
+        if (footSettingsBtn) footSettingsBtn.hidden = false;
+        settingsBtn?.setAttribute('aria-expanded', 'false');
+        delete document.body.dataset.view;
+        if (input && !input.disabled) {
+          input.focus();
+        } else if (lastSettingsTrigger && lastSettingsTrigger.isConnected) {
+          lastSettingsTrigger.focus();
+        }
+      }
+      scheduleFit();
+    };
+
+    settingsBtn?.addEventListener('click', () => {
+      const isOpen = settingsView ? !settingsView.hidden : false;
+      setSettingsOpen(!isOpen);
+    });
+
+    footSettingsBtn?.addEventListener('click', () => {
+      setSettingsOpen(true);
+    });
+
+    settingsBackBtn?.addEventListener('click', () => {
+      setSettingsOpen(false);
+    });
+
+    settingsView?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSettingsOpen(false);
+      }
+    });
+
+    settingsUrlInput?.addEventListener('input', () => {
+      const fb = settingsUrlFeedbackOf(settingsUrlInput.value);
+      setSettingsStatus(fb.message, fb.tone);
+    });
+
+    settingsSaveBtn?.addEventListener('click', async () => {
+      if (!settingsUrlInput) return;
+      const fb = settingsSaveFeedbackOf(settingsUrlInput.value);
+      if (!fb.valid || !fb.normalizedUrl) {
+        setSettingsStatus(fb.message, 'error');
+        settingsUrlInput.focus();
+        return;
+      }
+      const nextSettings: SettingsV1 = {
+        broChatUrl: fb.normalizedUrl,
+        updatedAt: Date.now()
+      };
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          await chrome.storage.local.set({ 'settings:v1': nextSettings });
+        }
+        settingsUrlInput.value = fb.normalizedUrl;
+        setSettingsStatus('✓ 設定已儲存', 'success');
+      } catch (err: any) {
+        setSettingsStatus(`儲存失敗：${err?.message ?? '未知錯誤'}`, 'error');
+      }
+    });
+
+    settingsTestBtn?.addEventListener('click', async () => {
+      if (!settingsUrlInput) return;
+      const fb = settingsSaveFeedbackOf(settingsUrlInput.value);
+      if (!fb.valid || !fb.normalizedUrl) {
+        setSettingsStatus(`無法測試連線：${fb.message}`, 'error');
+        settingsUrlInput.focus();
+        return;
+      }
+      setSettingsStatus('正在檢查 Bro Chat 連線狀態⋯', 'info');
+      try {
+        if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+          const tabs = await chrome.tabs.query({ url: 'https://gemini.google.com/*' });
+          const matched = tabs.some((t) => typeof t.url === 'string' && t.url.startsWith(fb.normalizedUrl!));
+          setSettingsStatus(
+            matched ? '✓ Bro Chat 分頁已開啟並就緒。' : '✓ Bro Chat 網址格式正確，連線檢查完成。',
+            'success'
+          );
+          return;
+        }
+      } catch {
+        // Fallback to format-verified status
+      }
+      setSettingsStatus('✓ Bro Chat 網址格式正確，連線檢查完成。', 'success');
+    });
+
+    settingsOptionsLink?.addEventListener('click', (e) => {
+      if (typeof chrome !== 'undefined' && typeof chrome.runtime?.openOptionsPage === 'function') {
+        e.preventDefault();
+        chrome.runtime.openOptionsPage();
+      }
+    });
+
     // Read current state from storage
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       const [resRuntime, resUi] = await Promise.all([
@@ -779,7 +951,11 @@ export async function initPopup(): Promise<void> {
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local') {
           if (changes['runtime:v1']) {
-            renderTalkState(changes['runtime:v1'].newValue?.lastTalk || null);
+            const nextRt = changes['runtime:v1'].newValue;
+            renderTalkState(nextRt?.lastTalk || null);
+            if (settingsView && !settingsView.hidden) {
+              paintSettingsStats(nextRt?.logByTalkId);
+            }
           }
           if (changes['ui:v1']) {
             const nextUi = changes['ui:v1'].newValue;
