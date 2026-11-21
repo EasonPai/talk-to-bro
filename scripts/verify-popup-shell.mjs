@@ -177,7 +177,7 @@ try {
     assert.deepEqual(optExternal, [], 'options must make no external network request');
     const optText = await options.evaluate(`document.body.innerText`);
     assert.doesNotMatch(optText, /Pip|老大|Roguelike|🦊|v0\.1\.0/, 'options must not display legacy RPG terms');
-    assert.match(optText, /Talk To Bro v0\.2\.0/, 'options must display v0.2.0');
+    assert.match(optText, /Talk To Bro v1\.0\.0/, 'options must display v1.0.0');
     for (const scheme of ['light', 'dark']) {
       await options.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
       const bg = await options.evaluate(`getComputedStyle(document.body).backgroundColor`);
