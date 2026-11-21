@@ -3,44 +3,85 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Talk To Bro Personally</title>
+  <title>Talk To Bro</title>
   <link rel="stylesheet" href="popup.css">
 </head>
-<body>
+<body data-phase="idle">
   <div class="popup-container">
-    <button id="previous-card" class="previous-card" type="button" aria-expanded="false" aria-controls="previous-detail" hidden>
-      <span id="previous-label" class="previous-label"></span>
-    </button>
-    <div id="previous-detail" class="previous-detail" hidden>
-      <p id="previous-text" class="previous-text"></p>
-      <pre id="previous-answer" class="previous-answer" hidden></pre>
-    </div>
-    <header class="popup-header">
-      <div class="bro-status">
-        <span class="bro-avatar"><img src="assets/dragon.jpg" alt="" width="40" height="40"></span>
-        <div class="bro-info">
-          <span class="bro-name">惡龍 Bro</span>
-          <span class="bro-presence">在線上・通常 3 分鐘內回</span>
+    <header class="hero popup-header">
+      <svg class="hero-wave" viewBox="0 0 400 44" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0 24 C 95 6, 175 40, 275 20 C 330 9, 370 18, 400 26 L 400 44 L 0 44 Z" fill="var(--wave-1)"/>
+        <path d="M0 32 C 110 18, 210 42, 315 26 C 355 20, 382 24, 400 30 L 400 44 L 0 44 Z" fill="var(--wave-2)"/>
+      </svg>
+      <div class="top">
+        <div class="brand">
+          <div class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 6h16v11H9l-5 3z"/>
+              <path d="M8 11h8M8 14h5"/>
+            </svg>
+          </div>
+          <span class="brand-name">Talk To Bro</span>
+        </div>
+        <div class="header-actions">
+          <button id="pin-toggle-btn" class="pin-toggle-btn" type="button" title="釘選至側邊欄" aria-label="釘選至側邊欄">
+            <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M16 12V4H8v8l-2 2v2h5.2v5l.8 1 .8-1v-5H18v-2l-2-2z"/>
+            </svg>
+            <span id="pin-toggle-text">釘選</span>
+          </button>
+          <a id="settings-btn" href="options.html" target="_blank" class="gear-btn icon-btn" title="設定 Bro Chat" aria-label="設定 Bro Chat">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19 12a7 7 0 0 0-.1-1.2l1.6-1.3-1.5-2.6-2 .6a7 7 0 0 0-2-1.2L14.5 4h-3l-.5 2.3a7 7 0 0 0-2 1.2l-2-.6-1.5 2.6 1.6 1.3a7 7 0 0 0 0 2.4l-1.6 1.3 1.5 2.6 2-.6a7 7 0 0 0 2 1.2l.5 2.3h3l.5-2.3a7 7 0 0 0 2-1.2l2 .6 1.5-2.6-1.6-1.3A7 7 0 0 0 19 12Z"/>
+            </svg>
+          </a>
         </div>
       </div>
-      <div class="header-actions">
-        <button id="pin-toggle-btn" class="pin-toggle-btn" type="button" title="釘選至側邊欄" aria-label="釘選至側邊欄">
-          <svg class="pin-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M16 12V4H8v8l-2 2v2h5.2v5l.8 1 .8-1v-5H18v-2l-2-2z"/>
-          </svg>
-          <span id="pin-toggle-text">釘選</span>
-        </button>
-      </div>
+      <h2 class="hero-title">Hey, Bro.</h2>
+      <p class="hero-sub">一個字，也值得好好弄懂。</p>
     </header>
 
     <main class="popup-main">
-      <div class="narration">
-        <img class="narration-hero" src="assets/hero.jpg" alt="" width="40" height="40">
-        <div class="narration-box">
-          <p id="pip-mood" class="narration-text" role="status" aria-live="polite" aria-atomic="true">野生的 惡龍 Bro 出現了！勇者要怎麼做？</p>
-          <p class="narration-menu" aria-hidden="true">▶ 傳訊息</p>
+      <button id="previous-card" class="previous-card" type="button" aria-expanded="false" aria-controls="previous-detail" hidden>
+        <span id="previous-label" class="previous-label"></span>
+      </button>
+      <div id="previous-detail" class="previous-detail" hidden>
+        <p id="previous-text" class="previous-text"></p>
+        <pre id="previous-answer" class="previous-answer" hidden></pre>
+      </div>
+
+      <div class="status-row">
+        <span class="status-name">YOUR TALK</span>
+        <span id="pip-mood" class="status-chip" role="status" aria-live="polite" aria-atomic="true">準備好了</span>
+      </div>
+
+      <div class="input-card composer">
+        <div class="field">
+          <label for="talk-input" class="sr-only">輸入要查的單字或片語：</label>
+          <textarea
+            id="talk-input"
+            placeholder="輸入單字或片語⋯"
+            maxlength="300"
+            rows="1"
+            autofocus
+          ></textarea>
+          <button id="send-btn" class="send" type="button" aria-label="送出 Talk" title="送出 Talk">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12h15M13 6l6 6-6 6"/>
+            </svg>
+          </button>
+        </div>
+        <div class="input-meta">
+          <span class="submit-hint"><kbd>Enter</kbd> 送出・<kbd>Shift</kbd>+<kbd>Enter</kbd> 換行</span>
+          <span id="char-counter">0 / 300</span>
         </div>
       </div>
+
+      <section id="empty-card" class="empty" aria-label="歡迎指引">
+        <h2>What’s on your mind?</h2>
+        <p>把想查的字交給 Bro，答案會出現在這裡。</p>
+      </section>
 
       <section id="chat-view" class="chat-view" hidden aria-label="傳訊狀態">
         <div class="bubble-row">
@@ -54,28 +95,12 @@
         </div>
       </section>
 
-      <div class="input-card composer">
-        <label for="talk-input" class="sr-only">輸入要查的單字或片語：</label>
-        <textarea
-          id="talk-input"
-          placeholder="輸入想查的單字 (最多 300 字)..."
-          maxlength="300"
-          rows="2"
-          autofocus
-        ></textarea>
-        <div class="input-meta">
-          <span id="char-counter">0 / 300</span>
-          <span class="submit-hint"><kbd>Enter</kbd> 送出・<kbd>Shift</kbd>+<kbd>Enter</kbd> 換行</span>
-        </div>
-      </div>
-
       <section id="answer-container" class="answer-container" aria-labelledby="answer-title" style="display: none;">
         <div class="answer-header">
-          <img class="answer-avatar" src="assets/dragon.jpg" alt="" width="24" height="24">
-          <h1 id="answer-title" class="answer-title">惡龍的回覆 (Answer)</h1>
+          <h1 id="answer-title" class="answer-title">FROM BRO</h1>
           <div class="answer-actions">
             <button id="reading-toggle-btn" class="reading-toggle-btn" type="button" aria-expanded="false" aria-controls="answer-content">展開閱讀</button>
-            <button id="copy-btn" class="copy-btn">一鍵複製</button>
+            <button id="copy-btn" class="copy-btn" type="button">複製</button>
           </div>
         </div>
         <div id="answer-content" class="answer-content" role="region" aria-labelledby="answer-title" tabindex="0"></div>
@@ -83,29 +108,25 @@
 
       <div id="error-container" class="error-container" style="display: none;">
         <div class="error-header">
-          <span class="error-badge" id="error-badge">嚇到</span>
+          <span class="error-badge" id="error-badge">需要協助</span>
           <span id="error-message" class="error-message"></span>
         </div>
         <div id="handoff-notice" class="handoff-notice" style="display: none;">
-          <span id="countdown-text" class="countdown-text">勇者帶你去找惡龍… (1.5s)</span>
-          <button id="cancel-handoff-btn" class="cancel-btn">留在這裡</button>
+          <span id="countdown-text" class="countdown-text">即將複製內容並切換至 Bro Chat… (1.5s)</span>
+          <button id="cancel-handoff-btn" class="cancel-btn" type="button">留在這裡</button>
         </div>
         <div id="deferred-notice" class="deferred-notice" style="display: none;">
-          <button id="goto-bro-btn" class="goto-bro-btn" autofocus>去找惡龍 ⏎</button>
+          <button id="goto-bro-btn" class="goto-bro-btn" type="button" autofocus>前往 Bro Chat ⏎</button>
         </div>
       </div>
     </main>
 
     <footer class="popup-footer">
-      <span id="source-line" class="source-line" hidden>SOURCE: TRUST ME BRO</span>
-      <span>快捷鍵: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></span>
+      <span id="source-line" class="source-line" hidden>Source: Bro Chat</span>
+      <span>一個 Talk，一次完整的回答。</span>
+      <span><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd></span>
     </footer>
-    <a href="options.html" target="_blank" class="gear-btn" title="設定 Bro Chat" aria-label="設定 Bro Chat">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <path d="m9 3-.6 2.4-2.1 1.2L4 6l-3 5 1.8 1.8v2.4L1 17l3 5 2.3-.6 2.1 1.2L9 25h6l.6-2.4 2.1-1.2 2.3.6 3-5-1.8-1.8v-2.4L23 11l-3-5-2.3.6-2.1-1.2L15 3Z" transform="translate(2 0) scale(.83)"/>
-      <circle cx="12" cy="12" r="3"/>
-    </svg>
-    </a>
+
     <div id="speech-toast" class="speech-toast" role="status" aria-live="polite" style="display: none;"></div>
   </div>
   <script type="module" src="popup.js"></script>

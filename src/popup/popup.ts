@@ -327,6 +327,7 @@ export function renderTalkState(talk: Talk | null) {
   document.body.dataset.busy = String(busy);
 
   const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
+  const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
   const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
   const pipMood = document.getElementById('pip-mood') as HTMLSpanElement | null;
   const answerContainer = document.getElementById('answer-container') as HTMLDivElement | null;
@@ -345,6 +346,9 @@ export function renderTalkState(talk: Talk | null) {
     if (busy) input.setAttribute('aria-disabled', 'true');
     else input.removeAttribute('aria-disabled');
   }
+  if (sendBtn) {
+    sendBtn.disabled = busy;
+  }
 
   clearCountdown();
   clearHudTimer();
@@ -354,7 +358,7 @@ export function renderTalkState(talk: Talk | null) {
 
   if (!talk) {
     wasBusy = false;
-    if (pipMood) pipMood.textContent = '野生的 惡龍 Bro 出現了！勇者要怎麼做？';
+    if (pipMood) pipMood.textContent = '準備好了';
     if (answerContainer) answerContainer.style.display = 'none';
     if (errorContainer) errorContainer.style.display = 'none';
     updateReadingModeUI();
@@ -497,6 +501,7 @@ export async function initPopup(): Promise<void> {
     }
 
     const input = document.getElementById('talk-input') as HTMLTextAreaElement | null;
+    const sendBtn = document.getElementById('send-btn') as HTMLButtonElement | null;
     const counter = document.getElementById('char-counter') as HTMLSpanElement | null;
     const copyBtn = document.getElementById('copy-btn') as HTMLButtonElement | null;
     const readingToggleBtn = document.getElementById('reading-toggle-btn') as HTMLButtonElement | null;
@@ -638,6 +643,43 @@ export async function initPopup(): Promise<void> {
       }
     };
 
+    const syncComposerHeight = () => {
+      if (!input) return;
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(120, Math.max(44, input.scrollHeight))}px`;
+    };
+
+    const submitTalk = () => {
+      if (!input || isTalkBusy(currentLastTalk)) return;
+      const rawText = input.value;
+      if (rawText.trim().length === 0) {
+        input.focus();
+        return;
+      }
+
+      const prevTalk = currentLastTalk;
+      chrome.runtime.sendMessage({
+        action: 'talk/submit',
+        text: rawText,
+        draftRevision: currentRevision,
+        host: isSidepanel ? 'sidepanel' : 'popup',
+        hostSeq
+      }, (res) => {
+        const outcome = submitOutcomeOf(res);
+        if (outcome.kind === 'accepted') {
+          submitPreviousSummary(prevTalk);
+          renderTalkState(outcome.talk);
+        } else if (outcome.kind === 'busy') {
+          const status = document.getElementById('pip-mood');
+          if (status) status.textContent = outcome.message;
+        }
+      });
+    };
+
+    if (sendBtn) {
+      sendBtn.addEventListener('click', submitTalk);
+    }
+
     if (input) {
       input.focus();
       setTimeout(() => input.focus(), 50);
@@ -647,6 +689,7 @@ export async function initPopup(): Promise<void> {
         if (counter) {
           counter.textContent = `${len} / 300`;
         }
+        syncComposerHeight();
         if (!isComposing) {
           saveDraft(input.value);
         }
@@ -666,28 +709,7 @@ export async function initPopup(): Promise<void> {
             return;
           }
           e.preventDefault();
-
-          if (isTalkBusy(currentLastTalk)) return;
-          const rawText = input.value;
-          if (rawText.trim().length === 0) return;
-
-          const prevTalk = currentLastTalk;
-          chrome.runtime.sendMessage({
-            action: 'talk/submit',
-            text: rawText,
-            draftRevision: currentRevision,
-            host: isSidepanel ? 'sidepanel' : 'popup',
-            hostSeq
-          }, (res) => {
-            const outcome = submitOutcomeOf(res);
-            if (outcome.kind === 'accepted') {
-              submitPreviousSummary(prevTalk);
-              renderTalkState(outcome.talk);
-            } else if (outcome.kind === 'busy') {
-              const status = document.getElementById('pip-mood');
-              if (status) status.textContent = outcome.message;
-            }
-          });
+          submitTalk();
         }
       });
     }
@@ -778,7 +800,7 @@ export async function initPopup(): Promise<void> {
   } catch (err: any) {
     console.error('[Popup] Top-level initialization error boundary caught:', err);
     const pipMood = document.getElementById('pip-mood');
-    if (pipMood) pipMood.textContent = '勇者暫時無法讀取狀態，但你仍可在此打字。';
+    if (pipMood) pipMood.textContent = '暫時無法讀取狀態，但你仍可在此打字。';
     const errorContainer = document.getElementById('error-container');
     if (errorContainer) {
       errorContainer.style.display = 'block';
