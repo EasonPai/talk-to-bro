@@ -1,28 +1,38 @@
 // tests/unit/popup-view-state.test.ts — T2-1 / T2-2
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sendViewOf, hudOf, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, BUSY_NOTICE } from '../../src/popup/view-state.ts';
+import { sendViewOf, hudOf, formatSentTime, submitOutcomeOf, draftActionOf, isTalkBusy, shouldFocusInput, BUSY_NOTICE } from '../../src/popup/view-state.ts';
 import type { Talk } from '../../src/shared/types.ts';
 
 const talk = (phase: string, extra: Partial<Talk> = {}) =>
   ({ id: 't', text: 'hi', phase, createdAt: 0, updatedAt: 0, phaseDeadlineAt: null, ...extra }) as Talk;
 
-test('T2-1: 送出中 phases without sentAt show no 已讀', () => {
+test('T2-1: 送出中 phases without sentAt show no 已讀 and calm Tidal Calm copy', () => {
   for (const p of ['queued', 'resolving_tab', 'sending', 'submitting']) {
     const v = sendViewOf(talk(p));
     assert.equal(v.kind, 'sending', p);
     assert.equal(v.readReceipt, false, p);
+    assert.equal(v.narration, '傳送中', p);
     assert.equal(hudOf(talk(p), 1000), null, p);
   }
 });
 
-test('T2-1: waiting with sentAt shows 已讀, without sentAt it does not', () => {
-  assert.equal(sendViewOf(talk('waiting', { sentAt: 5 })).readReceipt, true);
-  assert.equal(sendViewOf(talk('extracting', { sentAt: 5 })).kind, 'reading');
+test('T2-1: waiting with sentAt shows 已讀 and calm Bro 正在回覆 copy', () => {
+  const waitingWithSent = sendViewOf(talk('waiting', { sentAt: 5 }));
+  assert.equal(waitingWithSent.readReceipt, true);
+  assert.equal(waitingWithSent.narration, 'Bro 正在回覆');
+  const extracting = sendViewOf(talk('extracting', { sentAt: 5 }));
+  assert.equal(extracting.kind, 'reading');
+  assert.equal(extracting.narration, 'Bro 正在回覆');
   assert.equal(sendViewOf(talk('waiting')).readReceipt, false);
   assert.equal(sendViewOf(null).kind, 'none');
   assert.equal(sendViewOf(talk('done', { sentAt: 5 })).kind, 'none');
   assert.equal(sendViewOf(talk('failed', { sentAt: 5 })).kind, 'none');
+});
+
+test('formatSentTime formats HH:MM', () => {
+  const d = new Date(2026, 0, 1, 9, 5, 0);
+  assert.equal(formatSentTime(d.getTime()), '09:05');
 });
 
 test('T2-2: patience at 0 s, 24 s and 180 s', () => {

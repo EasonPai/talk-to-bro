@@ -88,7 +88,7 @@
           <span id="chat-receipt" class="receipt" hidden>已讀 <span id="chat-sent-time"></span></span>
           <p id="chat-bubble" class="bubble"></p>
         </div>
-        <div id="chat-typing" class="typing" hidden aria-hidden="true"><span></span><span></span><span></span></div>
+        <div id="chat-typing" class="loader" hidden aria-hidden="true"></div>
         <div id="hud" class="hud" hidden aria-hidden="true">
           <div class="hud-row"><span class="hud-name">耐心</span><span class="hud-bar"><span id="hud-patience-fill"></span></span><span id="hud-patience-label" class="hud-label"></span></div>
           <div class="hud-row"><span class="hud-name">沉默</span><span class="hud-bar"><span id="hud-silence-fill"></span></span><span id="hud-silence-label" class="hud-label"></span></div>
@@ -104,6 +104,7 @@
           </div>
         </div>
         <div id="answer-content" class="answer-content" role="region" aria-labelledby="answer-title" tabindex="0"></div>
+        <div class="answer-meta meta">完整回答可捲動閱讀 · Source: Bro Chat</div>
       </section>
 
       <div id="error-container" class="error-container" style="display: none;">

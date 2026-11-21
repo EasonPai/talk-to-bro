@@ -291,7 +291,7 @@ function paintPreviousCard(expanded: boolean) {
     return;
   }
   const label = document.getElementById('previous-label');
-  if (label) label.textContent = `📖 冒險之書・上一則 ${formatSentTime(previousSummary.at)}「${previousSummary.text}」`;
+  if (label) label.textContent = `前次 Talk・${formatSentTime(previousSummary.at)}「${previousSummary.text}」`;
   const text = document.getElementById('previous-text');
   if (text) text.textContent = previousSummary.text;
   const answer = document.getElementById('previous-answer');
@@ -399,7 +399,7 @@ export function renderTalkState(talk: Talk | null) {
       break;
 
     case 'done':
-      if (pipMood) pipMood.textContent = '惡龍 回覆了！勇者 獲得了 知識 ×1。';
+      if (pipMood) pipMood.textContent = 'Bro 已回覆';
 
       if (talk.answerMarkdown && answerContent && answerContainer) {
         const dirtyHtml = marked.parse(talk.answerMarkdown) as string;
@@ -732,7 +732,7 @@ export async function initPopup(): Promise<void> {
         try {
           await navigator.clipboard.writeText(currentLastTalk.answerMarkdown);
           const originalText = copyBtn.textContent;
-          copyBtn.textContent = '已複製！';
+          copyBtn.textContent = '已複製';
           copyBtn.classList.add('copied');
           setTimeout(() => {
             copyBtn.textContent = originalText;

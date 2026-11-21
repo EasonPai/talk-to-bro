@@ -38,7 +38,7 @@ export function sendViewOf(talk: Talk | null): SendView {
   const none: SendView = { kind: 'none', readReceipt: false, sentAt: null, narration: '', typing: false };
   if (!talk) return none;
   if (SENDING_PHASES.includes(talk.phase)) {
-    return { kind: 'sending', readReceipt: false, sentAt: null, narration: '勇者 把訊息傳給惡龍……', typing: false };
+    return { kind: 'sending', readReceipt: false, sentAt: null, narration: '傳送中', typing: false };
   }
   if (WAITING_PHASES.includes(talk.phase)) {
     const hasSent = typeof talk.sentAt === 'number';
@@ -46,7 +46,7 @@ export function sendViewOf(talk: Talk | null): SendView {
       kind: 'reading',
       readReceipt: hasSent,
       sentAt: hasSent ? (talk.sentAt as number) : null,
-      narration: '惡龍 正在詠唱咒文……',
+      narration: 'Bro 正在回覆',
       typing: true
     };
   }
@@ -129,7 +129,7 @@ export interface PreviousSummary {
 
 export const PREVIOUS_TEXT_MAX_CHARS = 40;
 
-/** T5: builds the in-memory 冒險之書 summary from the Talk being replaced; null when there is no previous Talk. */
+/** T5: builds the in-memory 前次 Talk summary from the Talk being replaced; null when there is no previous Talk. */
 export function previousSummaryOf(prev: Talk | null | undefined): PreviousSummary | null {
   if (!prev || typeof prev.text !== 'string' || prev.text.trim().length === 0) return null;
   const lines = (prev.answerMarkdown ?? '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 3);

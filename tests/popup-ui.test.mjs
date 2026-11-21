@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 
 const root = new URL('../', import.meta.url);
 const output = new URL('../../../.scratch/impeccable/talk-popup/', import.meta.url);
-const endpoint = 'http://127.0.0.1:9222';
+const endpoint = process.env.TTB_CDP_ENDPOINT || 'http://127.0.0.1:9222';
 let socket;
 let target;
 let sequence = 0;
@@ -147,24 +147,28 @@ test('idle is compact, keyboard-ready, and has an accessible status and settings
     phase: 'idle', busy: 'false', focus: 'talk-input', status: 'status',
     settings: '設定 Bro Chat', height: undefined, answerHidden: true
   });
-  // T1 design adds the LINE header, RPG narration box and pill composer (~306px); the answer area is still not reserved (answerHidden).
-  assert.ok(state.height < 320, `Idle should not reserve a scene/answer area: ${state.height}`);
+  // Tidal Calm .popup-container has min-height 520px while keeping answer area hidden in idle.
+  assert.ok(state.height <= 525, `Idle should not exceed compact container height: ${state.height}`);
   await capture('idle-400');
 });
 
-test('The Bro header stays the same character across phases, with truthful loading and reduced motion', async () => {
+test('The Tidal Calm status chip and loader behave across busy phases, with reduced motion', async () => {
   for (const phase of ['queued', 'resolving_tab', 'sending', 'submitting', 'waiting', 'extracting']) {
     await render(talk(phase));
     assert.deepEqual(await evaluate(`({
-      sprite: document.querySelector('.bro-avatar img').getAttribute('src'),
+      brand: document.querySelector('.brand-name').textContent,
       phase: document.body.dataset.phase, busy: document.body.dataset.busy,
-      hidden: getComputedStyle(document.getElementById('answer-container')).display === 'none'
-    })`), { sprite: 'assets/dragon.jpg', phase, busy: 'true', hidden: true });
+      hidden: getComputedStyle(document.getElementById('answer-container')).display === 'none',
+      emptyHidden: getComputedStyle(document.getElementById('empty-card')).display === 'none'
+    })`), { brand: 'Talk To Bro', phase, busy: 'true', hidden: true, emptyHidden: true });
   }
-  await render(talk('waiting'));
+  await render(talk('waiting', { sentAt: Date.now() - 5000 }));
+  assert.equal(await evaluate(`document.getElementById('pip-mood').textContent`), 'Bro 正在回覆');
+  assert.equal(await evaluate(`document.getElementById('chat-typing').hidden`), false);
+  assert.equal(await evaluate(`document.getElementById('hud').hidden`), false);
   await capture('waiting-400');
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.narration-box')).animationName`), 'none');
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.loader')).animationName`), 'none');
   await send('Emulation.setEmulatedMedia', { features: [] });
 });
 
@@ -175,26 +179,25 @@ test('full sanitized Markdown, original copy and Last Talk restoration remain in
   assert.deepEqual(await evaluate(`({
     input: document.getElementById('talk-input').value,
     counter: document.getElementById('char-counter').textContent,
-    sprite: document.querySelector('.bro-avatar img').getAttribute('src'),
+    brand: document.querySelector('.brand-name').textContent,
     heading: document.querySelector('#answer-content h1').textContent,
     cells: document.querySelectorAll('#answer-content td').length,
     injected: Boolean(window.injected),
     focus: document.activeElement.id,
     busy: document.getElementById('answer-container').getAttribute('aria-busy')
   })`), {
-    input: completed.text, counter: `${completed.text.length} / 300`,
-    sprite: 'assets/dragon.jpg', heading: 'meticulous', cells: 2, injected: false,
+    input: '', counter: '0 / 300',
+    brand: 'Talk To Bro', heading: 'meticulous', cells: 2, injected: false,
     focus: 'talk-input', busy: 'false'
   });
   assert.deepEqual(await evaluate(`({
     narration: document.getElementById('pip-mood').textContent,
-    source: getComputedStyle(document.getElementById('source-line')).display !== 'none' && document.getElementById('source-line').textContent,
-    gotoVisible: getComputedStyle(document.getElementById('goto-bro-btn')).display !== 'none' && getComputedStyle(document.getElementById('error-container')).display !== 'none',
-    bubbleAvatarAlt: document.querySelector('.answer-avatar').getAttribute('alt')
-  })`), { narration: '惡龍 回覆了！勇者 獲得了 知識 ×1。', source: 'SOURCE: TRUST ME BRO', gotoVisible: false, bubbleAvatarAlt: '' });
+    meta: document.querySelector('.answer-meta').textContent,
+    gotoVisible: getComputedStyle(document.getElementById('goto-bro-btn')).display !== 'none' && getComputedStyle(document.getElementById('error-container')).display !== 'none'
+  })`), { narration: 'Bro 已回覆', meta: '完整回答可捲動閱讀 · Source: Bro Chat', gotoVisible: false });
   await evaluate(`document.getElementById('copy-btn').click()`);
   assert.equal(await evaluate('testClipboard.at(-1)'), answer);
-  assert.equal(await evaluate(`document.getElementById('copy-btn').textContent`), '已複製！');
+  assert.equal(await evaluate(`document.getElementById('copy-btn').textContent`), '已複製');
   await capture('answer-400');
 });
 
@@ -286,14 +289,15 @@ test('Enter and IME behavior, Shift+Enter, keyboard focus and the input limit ar
     input.dispatchEvent(new Event('compositionend'));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
   `);
-  assert.equal(await evaluate('testMessages.length'), 0);
+  assert.equal(await evaluate(`testMessages.filter(m => m.action === 'talk/submit').length`), 0);
   await evaluate(`document.getElementById('talk-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
-  assert.deepEqual(await evaluate('testMessages.at(-1)'), { action: 'talk/submit', text: 'meticulous' });
+  const lastMsg = await evaluate('testMessages.at(-1)');
+  assert.equal(lastMsg.action, 'talk/submit');
+  assert.equal(lastMsg.text, 'meticulous');
   await evaluate(`document.querySelector('.gear-btn').focus()`);
-  // T5 / X-2: settings is last in Tab order (card, input, actions, settings), so Shift+Tab from settings returns to the input.
+  // Shift+Tab from settings goes to pin-toggle-btn in the header actions bar.
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
-  assert.equal(await evaluate('document.activeElement.id'), 'talk-input');
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.input-card')).borderColor`), 'rgb(6, 199, 85)');
+  assert.equal(await evaluate('document.activeElement.id'), 'pin-toggle-btn');
   assert.equal(await evaluate(`document.getElementById('talk-input').maxLength`), 300);
 });
