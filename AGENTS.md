@@ -59,7 +59,7 @@ npm run verify:m5
 <!-- AGENTIC_TEAM:START -->
 ## Optional agentic team (company)
 
-Read `tools/roles/config/team-config.json` before applying company rules. Only when `enabled` is exactly `true`, read `tools/roles/config/team-rules.md` and the installed `ep-agentic-orca-team` Skill. Role authority comes exclusively from `tools/roles/config/executive-roles.json`; identity checks use `python3 tools/roles/executive-identity.py` from the project root. If the Skill is unavailable, the pinned local rules and CLI remain available for recovery checks.
+Read `tools/roles/config/team-config.json` before applying company rules. Only when `enabled` is exactly `true`, read `tools/roles/config/team-rules.md` and the installed `ep-system-manage-team` Skill. Role authority comes exclusively from `tools/roles/config/executive-roles.json`; identity checks use `python3 tools/roles/executive-identity.py` from the project root. If the Skill is unavailable, the pinned local rules and CLI remain available for recovery checks.
 
 When disabled (company dissolved), role claiming, dispatch and direct-manager reporting rules do not apply. General project rules continue to apply. Installation and deployment do not authorize role appointment, desk (terminal) launch or product work. Terminal titles and checkpoints provide context, never authority. Do not proceed if status reports conflict or partially-applied.
 <!-- AGENTIC_TEAM:END -->
@@ -110,7 +110,7 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
   - **全鏈路展開與窮舉原則 (Complete Call-Chain Enumeration)**：
     - **禁止只列入口 Skill**：只要當前回合中（包含主 Agent 與任何派出的 Subagent）有讀取任何 `SKILL.md` 或實際套用多個技能規範，**必須全部列出，不得遺漏**。
     - **串聯調用表示法**：當入口 Skill 內部調用或串聯了其他子技能時，使用 `→` 展開調用鏈，同層多個技能以 `,` 分隔（例如：`` `ep-skill-handbook` → [`diagram-design`, `show-me`, `asd-ste100`] ``）。
-    - **跨 Subagent 匯總**：若透過 Subagent 執行特定技能，必須要求 Subagent 回報其使用的所有 Skills，並於主回覆中匯總標註 `(via Subagent)`（例如：`` `ep-agentic-brd` → [`speckit-specify`, `speckit-clarify`] (via Subagent) ``）。
+    - **跨 Subagent 匯總**：若透過 Subagent 執行特定技能，必須要求 Subagent 回報其使用的所有 Skills，並於主回覆中匯總標註 `(via Subagent)`（例如：`` `ep-dev-write-brd` → [`speckit-specify`, `speckit-clarify`] (via Subagent) ``）。
     - **跨輪次完整繼承**：下一輪對話的「前次對話使用 Skill」必須完整保留上一輪展開後的完整調用鏈，不得自行縮減。
 <!-- AGENTIC_SETUP:SKILL_TRACKING_END -->
 
@@ -134,38 +134,8 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
 - 啟用 orca-team 時，角色分工（Engineer / QA / PM）以 `team-rules.md` 第 5 節為準。
 <!-- AGENTIC_SETUP:TEST_SCOPE_END -->
 
-<!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_START -->
-### Skill Management & Discovery Protocol (Skill Manager 統一管理與嚴格邊界協議)
+<!-- EP_SKILL_MANAGER:START -->
+## EP Skill Management
 
-為保持專案主幹乾淨並精確控制專案受影響範圍，所有 Skills 統一遵循以下管理與查找邊界原則：
-
-1. **查找優先順序與嚴格邊界 (Discovery Precedence & Strict Scope Boundary)**：
-   當需要調用或尋找任何 Skill 時，Agent 必須強制遵循以下順序查找：
-   - **優先級 1（最高優先）**：專案本地與 Worktree 專用目錄 `.agents/skills/<skill-name>/`（專門放置本專案或當前 Worktree 特化/正在開發的 Skills）。
-   - **優先級 2**：由 Skill Manager 在專案根目錄建立的各 Agent 目錄（如 `.<agent>/skills/<skill-name>/`，包含 `.claude/skills/`, `.codex/skills/`, `.gemini/skills/`, `.cursor/skills/`, `.copilot/skills/`, `.hermes/skills/`, `.opencode/skills/`, `.grok/skills/` 等）。
-   - **嚴格邊界限制（禁止越界查找）**：若上述兩個位置皆找不到，**絕對禁止**逕自前往全域路徑、主機快取（如 `~/.cache/`）或遠端網路抓取/Clone。缺少 Skill 時必須明確向使用者回報，由使用者透過 Skill Manager UI/CLI 統一安裝與管理至專案中。
-
-2. **Git 忽略與主幹乾淨 (Gitignore Hygiene)**：
-   - 所有由 Skill Manager 管理並 Symlink 到專案根目錄的各 Agent skills 目錄（如 `.<agent>/skills/*`），一律加入 `.gitignore`，不提交進版控。
-   - 僅本專案或 Worktree 本地專屬的 `.agents/skills/` 視專案需求納入版控。
-
-3. **Antigravity CLI (agy) 技能橋接與過濾機制 (Skill Discovery Bridge & Exclude Filter)**：
-   - 透過受版控追蹤的 `.agents/skills.json` 將 Skill Manager 建立於 `.gemini/skills/` 的技能橋接至 `agy`，確保所有模型與工具皆可探索與調用技能。
-   - 使用 `exclude` 陣列（如排除 `poteto-.*`、`principle-.*`），精簡技能清單，避免注入過多不相關的規則或技能。
-
-4. **Git Worktree 技能符號連結注意事項 (Worktrees Lack Symlinks)**：
-   - Git Worktree（如 `.worktrees/*`）為獨立目錄，建立時不會自動繼承根目錄被 `.gitignore` 忽略的 `.<agent>/skills/` 符號連結（symlinks）。
-   - 若在 Worktree 內需要使用外部技能，需執行 link-worktree-skills 腳本（`products/agentic-env/scripts/link-worktree-skills.sh` 或相關工具腳本）建立符號連結與 local exclude 忽略。
-
-5. **`ep-*` 專屬技能單一維護來源原則 (Source of Truth for `ep-*` Skills)**：
-   - 所有 `ep-*` 技能的唯一編輯與維護來源（Source of Truth）一律嚴格限定於 GitHub `EasonPai/ep-skills` 的本機 checkout（位於 `skills/<category>/<skill>/`）。**不寫死路徑**：一律執行 `bash .agents/skills/ep-agentic-env-setup/scripts/resolve-ep-skills-root.sh`（或任一 `.<agent>/skills/ep-agentic-env-setup/scripts/` 下同名腳本），只編輯它印出的目錄。腳本從目前專案往上逐層尋找 `ep-skills/source/ep-skills` 或 `ep-skills`，並驗證 origin 為 `EasonPai/ep-skills` 且含 `scripts/publish-skills.sh`。
-   - 解析失敗時**回報 blocked**，嚴禁自行猜測或改用其他副本；特殊位置可用 `EP_SKILLS_ROOT` 臨時覆蓋（同樣會驗證）。
-   - **嚴格禁止**直接在專案的 `.<agent>/skills/ep-*`（symlinks）中進行編輯。
-   - 修改完成後，必須在 `ep-skills` 儲存庫中透過 `scripts/publish-skills.sh` 進行版本提交並推送到遠端 origin；嚴禁在發布流程中使用強制推送（never force push）。
-
-6. **Tool Call 調用失敗自動降級至直接讀檔原則 (Tool Call Fallback to Direct Markdown Read)**：
-   - 當 Agent 嘗試透過平台工具調用任何技能（如 `skill(...)`、`use_skill(...)` 或 Harness 內建技能呼叫工具）失敗時（包含但不限於：回報 `Skill not found`、受 `disable-model-invocation: true` 限制、未註冊、或環境工具鏈暫時不可用）：
-     - **嚴格禁止行為**：**嚴格禁止**誤判為技能遺失而擅自嘗試 clone、安裝或建立重複目錄；**嚴格禁止**透過 `computer-use` 操作桌面 GUI 去嘗試翻找或修改設定；**嚴格禁止**擅自修改共用技能 frontmatter 或繞過審查關卡。
-     - **強制降級路徑**：**立即無條件自動降級**，改用檔案讀取工具（如 `read_file`、`cat`、`sed` 等）直接讀取該技能目錄下的 `SKILL.md`（及其相關的 `references/`、`playbooks/` 等檔案），將其方法論、規範與工作步驟完整載入至 Context 中，依其指示繼續推動並完成任務。
-     - **透明追蹤標註**：在回覆開頭的 Skill 追蹤行中，如實將該技能標註為讀取降級模式（例如：`` `to-tickets` (direct read fallback) ``）。
-<!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_END -->
+Use the manager installed in this project/worktree for skills and presets; read its SKILL.md before acting. If absent, ask before installing it; never substitute another project's installation, a source checkout or host cache.
+<!-- EP_SKILL_MANAGER:END -->

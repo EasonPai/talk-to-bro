@@ -28,7 +28,7 @@ Contents: 1 Scope and authority · 2 Wording · 3 Delivery workflow (work model)
 
 ## 3. Delivery workflow (work model)
 
-`T` below denotes `python3 <ep-agentic-orca-team>/scripts/team-setup.py --project <repo>`. Full CLI parameters and syntax: see `references/work-workflow-guide.md`.
+`T` below denotes `python3 <ep-system-manage-team>/scripts/team-setup.py --project <repo>`. Full CLI parameters and syntax: see `references/work-workflow-guide.md`.
 
 - **One source of truth**: Work state lives only in the ledger `.scratch/orca-team/events.jsonl`, and only `T work <action> <id>` changes it. Never edit ticket frontmatter status/retries by hand. Messages and terminal output never change state.
 - **Turn loop & whoami**:
