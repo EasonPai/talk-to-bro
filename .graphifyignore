@@ -1,0 +1,11 @@
+# Index project documentation and root Markdown only.
+node_modules/
+dist/
+coverage/
+target/
+.scratch/
+*
+!docs/
+!docs/**
+!docs/**/*.md
+!*.md

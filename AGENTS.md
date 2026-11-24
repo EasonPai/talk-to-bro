@@ -85,7 +85,11 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
 - **Wiki navigation:** If `graphify-out/wiki/index.md` exists, use it for structured domain and component navigation.
 - **Architecture review:** Read `graphify-out/GRAPH_REPORT.md` only for high-level architecture overview or when query/explain do not surface enough context.
 - **Graph Rebuild Rules (DO NOT run `graphify update .`):**
-  Never run bare `graphify update .`. Scope extraction to docs/ and root specifications.
+  Never run bare `graphify update .`. Scope extraction to `docs/` and root Markdown files.
+- **Rebuild:** `graphify extract . --force`
+- **Refresh after scoped content changes:** `graphify watch .` (manual/foreground) or rerun the same scoped extract command.
+- **Persistence:** `.graphifyignore` defines the scope; do not add generated dependencies or `dist/`.
+- **Local code-only fallback (no API key):** `graphify extract . --force --code-only --no-cluster`
 <!-- AGENTIC_SETUP:GRAPHIFY_END -->
 
 <!-- AGENTIC_SETUP:CFT_START -->
