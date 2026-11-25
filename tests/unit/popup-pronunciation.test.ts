@@ -536,3 +536,22 @@ test('M8: popup.html and popup.css declare accessible speech-toast and speakable
     assert.ok(!MANIFEST.permissions.includes(perm), `Forbidden permission in manifest: ${perm}`);
   }
 });
+
+test('Enhancement #35: wrapSpeakableWords parses phonetic notation and positions it adjacent to speakable-word', () => {
+  const container = new MockElement('DIV');
+  (container as any).ownerDocument = mockDocument;
+
+  const h3 = new MockElement('H3');
+  h3.appendChild(new MockTextNode('calm /kɑːm/'));
+  container.appendChild(h3);
+
+  wrapSpeakableWords(container as any);
+
+  const words = h3.childNodes.filter(c => c instanceof MockElement && c.classList.contains('speakable-word')) as MockElement[];
+  const phonetics = h3.childNodes.filter(c => c instanceof MockElement && c.classList.contains('phonetic')) as MockElement[];
+
+  assert.equal(words.length, 1);
+  assert.equal(words[0].dataset.word, 'calm');
+  assert.equal(phonetics.length, 1);
+  assert.equal(phonetics[0].textContent, '/kɑːm/');
+});

@@ -1,5 +1,5 @@
 // src/sw/index.ts
-// Background Service Worker for Talk To Bro Personally (MV3)
+// Background Service Worker for Talk To Bro (MV3)
 import { getBootReadyPromise } from './boot.ts';
 import { TalkRunner } from './runner.ts';
 import { getRuntimeStorage, saveRuntimeStorage, getSettingsStorage, getUiStorage, saveUiStorage } from '../shared/storage.ts';
@@ -260,5 +260,5 @@ chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
   await syncActionRouting();
   await reconcileUiOnBoot(chrome.storage?.local);
   await runner.boot();
-  console.log('[SW] Talk To Bro Personally Service Worker initialized and reconciled.');
+  console.log('[SW] Talk To Bro Service Worker initialized and reconciled.');
 })();

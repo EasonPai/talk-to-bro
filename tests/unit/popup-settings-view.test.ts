@@ -57,3 +57,12 @@ test('settingsSaveFeedbackOf rejects empty URL with error tone', () => {
   assert.equal(empty.tone, 'error');
   assert.ok(empty.message.length > 0);
 });
+
+test('Enhancement #35: Settings storage schema supports optional fontSize', () => {
+  const settings: import('../../src/shared/types.ts').SettingsV1 = {
+    broChatUrl: 'https://gemini.google.com/app/test',
+    fontSize: 18,
+    updatedAt: Date.now()
+  };
+  assert.equal(settings.fontSize, 18);
+});

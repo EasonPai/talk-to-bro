@@ -3,6 +3,7 @@
 
 export const CANDIDATE_CHUNK_REGEX = /[A-Za-z0-9_]+(?:['’\-][A-Za-z0-9_]+)*/g;
 export const VALID_SPEAKABLE_WORD_REGEX = /^[A-Za-z]+(?:['’\-][A-Za-z]+)*$/;
+export const PHONETIC_REGEX = /(?:(?:英|美|UK|US|KK|DJ)\s*)?(?:\[|\/)[a-zA-Z\u0250-\u02AF\u00C0-\u00FF\u0100-\u017F\u0300-\u036F\u1DC0-\u1DFFˈˌː:\.\,\-\s'’\(\)]+(?:\]|\/)/g;
 
 const EXCLUDED_TAGS = new Set([
   'A',
@@ -71,7 +72,7 @@ export function wrapSpeakableWords(container: HTMLElement): void {
         }
 
         const text = node.nodeValue || '';
-        if (!/[A-Za-z]/.test(text)) {
+        if (!/[A-Za-z\u0250-\u02AF\[\/]/.test(text)) {
           return FILTER_SKIP;
         }
 
@@ -87,59 +88,117 @@ export function wrapSpeakableWords(container: HTMLElement): void {
     currentNode = walker.nextNode();
   }
 
+  interface TokenSpan {
+    type: 'word' | 'phonetic';
+    text: string;
+    start: number;
+    end: number;
+  }
+
   for (const textNode of textNodesToProcess) {
     const parent = textNode.parentNode;
     if (!parent) continue;
 
     const originalText = textNode.nodeValue || '';
+    const spans: TokenSpan[] = [];
+
+    // 1. Match phonetics
+    PHONETIC_REGEX.lastIndex = 0;
+    let pMatch: RegExpExecArray | null;
+    while ((pMatch = PHONETIC_REGEX.exec(originalText)) !== null) {
+      spans.push({
+        type: 'phonetic',
+        text: pMatch[0],
+        start: pMatch.index,
+        end: pMatch.index + pMatch[0].length
+      });
+    }
+
+    // 2. Match candidate speakable words not overlapping phonetics
     CANDIDATE_CHUNK_REGEX.lastIndex = 0;
-
-    let match: RegExpExecArray | null;
-    let lastIndex = 0;
-    let hasSpeakable = false;
-
-    // Check if there is at least one speakable word in this text node
-    while ((match = CANDIDATE_CHUNK_REGEX.exec(originalText)) !== null) {
-      if (isSpeakableWord(match[0])) {
-        hasSpeakable = true;
-        break;
+    let cMatch: RegExpExecArray | null;
+    while ((cMatch = CANDIDATE_CHUNK_REGEX.exec(originalText)) !== null) {
+      const start = cMatch.index;
+      const end = start + cMatch[0].length;
+      const overlaps = spans.some((s) => Math.max(start, s.start) < Math.min(end, s.end));
+      if (!overlaps && isSpeakableWord(cMatch[0])) {
+        spans.push({
+          type: 'word',
+          text: cMatch[0],
+          start,
+          end
+        });
       }
     }
 
-    if (!hasSpeakable) continue;
+    if (spans.length === 0) continue;
 
-    // Reset regex for actual splitting and DOM creation
-    CANDIDATE_CHUNK_REGEX.lastIndex = 0;
+    // Sort spans in document order
+    spans.sort((a, b) => a.start - b.start);
+
     const fragment = doc.createDocumentFragment();
+    let lastIndex = 0;
 
-    while ((match = CANDIDATE_CHUNK_REGEX.exec(originalText)) !== null) {
-      const matchText = match[0];
-      const matchIndex = match.index;
-
-      // Text before match
-      if (matchIndex > lastIndex) {
-        fragment.appendChild(doc.createTextNode(originalText.slice(lastIndex, matchIndex)));
+    for (const span of spans) {
+      if (span.start > lastIndex) {
+        fragment.appendChild(doc.createTextNode(originalText.slice(lastIndex, span.start)));
       }
 
-      if (isSpeakableWord(matchText)) {
-        const span = doc.createElement('span');
-        span.className = 'speakable-word';
-        span.dataset.word = matchText;
-        span.textContent = matchText;
-        fragment.appendChild(span);
+      if (span.type === 'word') {
+        const el = doc.createElement('span');
+        el.className = 'speakable-word';
+        el.dataset.word = span.text;
+        el.textContent = span.text;
+        fragment.appendChild(el);
       } else {
-        fragment.appendChild(doc.createTextNode(matchText));
+        const el = doc.createElement('span');
+        el.className = 'phonetic';
+        el.textContent = span.text;
+        fragment.appendChild(el);
       }
 
-      lastIndex = matchIndex + matchText.length;
+      lastIndex = span.end;
     }
 
-    // Trailing text after last match
     if (lastIndex < originalText.length) {
       fragment.appendChild(doc.createTextNode(originalText.slice(lastIndex)));
     }
 
     parent.replaceChild(fragment, textNode);
+  }
+
+  alignPhonetics(container);
+}
+
+/**
+ * Ensures any phonetic block is positioned immediately adjacent to the right of its target speakable-word.
+ */
+export function alignPhonetics(container: HTMLElement): void {
+  if (!container || typeof container.querySelectorAll !== 'function') return;
+  const phonetics = Array.from(container.querySelectorAll('.phonetic')) as HTMLElement[];
+  const doc = container.ownerDocument || (typeof document !== 'undefined' ? document : null);
+  if (!doc) return;
+
+  for (const ph of phonetics) {
+    if (ph.previousElementSibling?.classList?.contains('speakable-word')) {
+      continue;
+    }
+    const block = ph.parentElement;
+    if (!block || block === container) continue;
+    const prevBlock = block.previousElementSibling as HTMLElement | null;
+    if (prevBlock && typeof prevBlock.querySelectorAll === 'function') {
+      const words = prevBlock.querySelectorAll('.speakable-word');
+      if (words.length > 0) {
+        const targetWord = words[words.length - 1];
+        if (targetWord.parentNode && typeof targetWord.parentNode.insertBefore === 'function') {
+          targetWord.parentNode.insertBefore(doc.createTextNode(' '), targetWord.nextSibling);
+          targetWord.parentNode.insertBefore(ph, targetWord.nextSibling);
+          if (block && !block.textContent?.trim() && typeof block.remove === 'function') {
+            block.remove();
+          }
+        }
+      }
+    }
   }
 }
 

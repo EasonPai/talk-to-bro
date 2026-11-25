@@ -112,7 +112,8 @@ test('popup.html contains reading-toggle-btn with correct ARIA attributes', () =
 
 test('popup.html contains Tidal Calm loader, answer-meta caption, and pin-toggle-btn', () => {
   assert.match(POPUP_HTML, /id="chat-typing"[^>]*class="[^"]*\bloader\b/);
-  assert.match(POPUP_HTML, /完整回答可捲動閱讀 · Source: Bro Chat/);
+  assert.match(POPUP_HTML, /完整回答可捲動閱讀/);
+  assert.doesNotMatch(POPUP_HTML, /Source: Bro Chat/);
   assert.match(POPUP_HTML, /<button\s+id="pin-toggle-btn"[^>]*class="pin-toggle-btn"/);
   assert.match(POPUP_HTML, /id="pin-toggle-text"/);
   assert.match(POPUP_HTML, /aria-label="釘選至側邊欄"/);

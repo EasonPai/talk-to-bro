@@ -55,8 +55,14 @@ def render_icon(target_size: int, stroke_factor: float = 2.0) -> Image.Image:
 
 def main():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out_dir = os.path.join(root_dir, 'src', 'icons')
-    os.makedirs(out_dir, exist_ok=True)
+    target_dirs = [
+        os.path.join(root_dir, 'src', 'icons'),
+        os.path.join(root_dir, 'icons'),
+        os.path.join(root_dir, 'dist', 'icons'),
+    ]
+
+    for d in target_dirs:
+        os.makedirs(d, exist_ok=True)
 
     configs = [
         (16, 2.5),
@@ -67,9 +73,10 @@ def main():
 
     for sz, sf in configs:
         icon = render_icon(sz, sf)
-        path = os.path.join(out_dir, f'icon{sz}.png')
-        icon.save(path)
-        print(f'Generated {path} ({sz}x{sz})')
+        for d in target_dirs:
+            path = os.path.join(d, f'icon{sz}.png')
+            icon.save(path)
+            print(f'Generated {path} ({sz}x{sz})')
 
 if __name__ == '__main__':
     main()

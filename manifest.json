@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Talk To Bro Personally",
+  "name": "Talk To Bro",
   "version": "1.0.0",
-  "description": "Chrome MV3 Extension for Talk To Bro Personally",
+  "description": "Chrome MV3 Extension for Talk To Bro",
   "minimum_chrome_version": "141",
   "permissions": [
     "storage",
@@ -34,7 +34,7 @@
       "128": "icons/icon128.png"
     },
     "default_popup": "popup.html",
-    "default_title": "Talk To Bro Personally"
+    "default_title": "Talk To Bro"
   },
   "side_panel": {
     "default_path": "sidepanel.html"

@@ -367,7 +367,6 @@ export function renderTalkState(talk: Talk | null) {
 
   clearCountdown();
   clearHudTimer();
-  setHidden('source-line', phase !== 'done');
   paintSendView(talk, Date.now());
   if (sendViewOf(talk).kind === 'reading' && talk) startHudTimer(talk);
 
@@ -769,6 +768,7 @@ export async function initPopup(): Promise<void> {
     const settingsBtn = document.getElementById('settings-btn') as HTMLButtonElement | null;
     const footSettingsBtn = document.getElementById('foot-settings-btn') as HTMLButtonElement | null;
     const settingsUrlInput = document.getElementById('settings-url-input') as HTMLInputElement | null;
+    const settingsFontSizeSelect = document.getElementById('settings-font-size-select') as HTMLSelectElement | null;
     const settingsUrlStatus = document.getElementById('settings-url-status') as HTMLElement | null;
     const settingsSaveBtn = document.getElementById('settings-save-btn') as HTMLButtonElement | null;
     const settingsTestBtn = document.getElementById('settings-test-btn') as HTMLButtonElement | null;
@@ -801,6 +801,11 @@ export async function initPopup(): Promise<void> {
         if (settingsUrlInput) {
           settingsUrlInput.value = saved?.broChatUrl ?? '';
         }
+        const fontSize = saved?.fontSize ?? 16;
+        if (settingsFontSizeSelect) {
+          settingsFontSizeSelect.value = String(fontSize);
+        }
+        document.documentElement.style.setProperty('--ttb-font-size', `${fontSize}px`);
         if (saved?.broChatUrl) {
           setSettingsStatus('已載入現有設定', 'info');
         } else {
@@ -874,10 +879,13 @@ export async function initPopup(): Promise<void> {
         settingsUrlInput.focus();
         return;
       }
+      const selectedFontSize = settingsFontSizeSelect ? parseInt(settingsFontSizeSelect.value, 10) || 16 : 16;
       const nextSettings: SettingsV1 = {
         broChatUrl: fb.normalizedUrl,
+        fontSize: selectedFontSize,
         updatedAt: Date.now()
       };
+      document.documentElement.style.setProperty('--ttb-font-size', `${selectedFontSize}px`);
       try {
         if (typeof chrome !== 'undefined' && chrome.storage?.local) {
           await chrome.storage.local.set({ 'settings:v1': nextSettings });
@@ -921,14 +929,51 @@ export async function initPopup(): Promise<void> {
       }
     });
 
+    settingsFontSizeSelect?.addEventListener('change', () => {
+      const size = parseInt(settingsFontSizeSelect.value, 10) || 16;
+      document.documentElement.style.setProperty('--ttb-font-size', `${size}px`);
+    });
+
+    const stepFontSize = async (delta: number) => {
+      const current = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--ttb-font-size'), 10) || 16;
+      let next = current + delta * 2;
+      if (next < 14) next = 14;
+      if (next > 20) next = 20;
+      document.documentElement.style.setProperty('--ttb-font-size', `${next}px`);
+      if (settingsFontSizeSelect) settingsFontSizeSelect.value = String(next);
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        try {
+          const res = await chrome.storage.local.get(['settings:v1']);
+          const currentSettings = (res['settings:v1'] as SettingsV1 | undefined) || { broChatUrl: null, updatedAt: Date.now() };
+          await chrome.storage.local.set({ 'settings:v1': { ...currentSettings, fontSize: next, updatedAt: Date.now() } });
+        } catch {}
+      }
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        void stepFontSize(1);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        void stepFontSize(-1);
+      }
+    });
+
     // Read current state from storage
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      const [resRuntime, resUi] = await Promise.all([
+      const [resRuntime, resUi, resSettings] = await Promise.all([
         chrome.storage.local.get('runtime:v1'),
-        chrome.storage.local.get('ui:v1')
+        chrome.storage.local.get('ui:v1'),
+        chrome.storage.local.get('settings:v1')
       ]);
       const runtime = resRuntime['runtime:v1'];
       const ui = resUi['ui:v1'];
+      const settings = resSettings?.['settings:v1'] as SettingsV1 | undefined;
+      if (settings?.fontSize) {
+        document.documentElement.style.setProperty('--ttb-font-size', `${settings.fontSize}px`);
+        if (settingsFontSizeSelect) settingsFontSizeSelect.value = String(settings.fontSize);
+      }
 
       if (ui && typeof ui.revision === 'number') {
         currentRevision = Math.max(currentRevision, ui.revision);

@@ -67,6 +67,7 @@ export interface LogEntry {
 export interface SettingsV1 {
   broChatUrl: string | null;
   updatedAt: number;
+  fontSize?: number;
 }
 
 export interface RuntimeV1Storage {

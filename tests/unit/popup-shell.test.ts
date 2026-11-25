@@ -43,10 +43,11 @@ test('Tidal Calm shell: popup.html preserves dual-host header actions, capsule c
   assert.match(html, /id="send-btn"/, 'popup.html must have #send-btn inside composer');
   assert.match(html, /id="char-counter"/, 'popup.html must have #char-counter');
   assert.match(html, /id="empty-card"/, 'popup.html must have #empty-card welcome card');
-  assert.match(html, /class="popup-footer"/, 'popup.html must have .popup-footer');
+  assert.doesNotMatch(html, /class="popup-footer"/, 'popup.html must not have .popup-footer');
   assert.match(html, /id="mainView"/, 'popup.html must have #mainView');
   assert.match(html, /id="settings"/, 'popup.html must have embedded #settings');
-  assert.match(html, /id="foot-settings-btn"/, 'popup.html must have #foot-settings-btn');
+  assert.doesNotMatch(html, /id="foot-settings-btn"/, 'popup.html must not have #foot-settings-btn');
+  assert.match(html, /id="settings-font-size-select"/, 'popup.html must have #settings-font-size-select');
   assert.match(html, /id="settings-url-input"/, 'popup.html must have #settings-url-input');
   assert.match(html, /id="stat-sent-in"/, 'popup.html must have #stat-sent-in');
   assert.match(html, /id="stat-read-back"/, 'popup.html must have #stat-read-back');

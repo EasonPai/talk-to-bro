@@ -1,7 +1,7 @@
 {
-  "name": "talk-to-bro-personally",
+  "name": "talk-to-bro",
   "version": "1.0.0",
-  "description": "Chrome MV3 Extension for Talk To Bro Personally",
+  "description": "Chrome MV3 Extension for Talk To Bro",
   "type": "module",
   "engines": {
     "node": ">=22"
