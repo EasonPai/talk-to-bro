@@ -173,3 +173,6 @@ This project maintains a curated knowledge graph at `graphify-out/` covering dom
      - **強制降級路徑**：**立即無條件自動降級**，改用檔案讀取工具（如 `read_file`、`cat`、`sed` 等）直接讀取該技能目錄下的 `SKILL.md`（及其相關的 `references/`、`playbooks/` 等檔案），將其方法論、規範與工作步驟完整載入至 Context 中，依其指示繼續推動並完成任務。
      - **透明追蹤標註**：在回覆開頭的 Skill 追蹤行中，如實將該技能標註為讀取降級模式（例如：`` `to-tickets` (direct read fallback) ``）。
 <!-- AGENTIC_SETUP:DYNAMIC_SKILL_SANDBOX_END -->
+
+## Deployment & Release Policy
+- **推送到 production（Production Deployment）定義**：當主人指示「推送到 production」或「推到 prod」時，其範圍包含且必須**同步推送到  分支**（即  與 /production 分支均需同步更新）。
