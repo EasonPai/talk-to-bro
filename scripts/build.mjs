@@ -83,6 +83,14 @@ async function build() {
   // Copy manifest.json
   fs.copyFileSync(path.join(ROOT_DIR, 'manifest.json'), path.join(DIST_DIR, 'manifest.json'));
 
+  // Copy extension icons
+  const iconsSrcDir = path.join(SRC_DIR, 'icons');
+  const iconsDistDir = path.join(DIST_DIR, 'icons');
+  if (fs.existsSync(iconsSrcDir)) {
+    fs.mkdirSync(iconsDistDir, { recursive: true });
+    fs.cpSync(iconsSrcDir, iconsDistDir, { recursive: true });
+  }
+
   // Copy HTML & CSS
   fs.copyFileSync(path.join(SRC_DIR, 'popup/popup.html'), path.join(DIST_DIR, 'popup.html'));
   fs.copyFileSync(path.join(SRC_DIR, 'popup/popup.html'), path.join(DIST_DIR, 'sidepanel.html'));
