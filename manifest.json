@@ -16,23 +16,11 @@
   "host_permissions": [
     "https://gemini.google.com/*"
   ],
-  "icons": {
-    "16": "assets/icons/icon16.png",
-    "32": "assets/icons/icon32.png",
-    "48": "assets/icons/icon48.png",
-    "128": "assets/icons/icon128.png"
-  },
   "background": {
     "service_worker": "sw.js",
     "type": "module"
   },
   "action": {
-    "default_icon": {
-      "16": "assets/icons/icon16.png",
-      "32": "assets/icons/icon32.png",
-      "48": "assets/icons/icon48.png",
-      "128": "assets/icons/icon128.png"
-    },
     "default_popup": "popup.html",
     "default_title": "Talk To Bro Personally"
   },
