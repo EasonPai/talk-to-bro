@@ -34,16 +34,17 @@ test('Failures Matrix - All 14 FailureCodes are exhaustively mapped with exact m
 
     assert.equal(info.code, code);
     assert.ok(typeof info.userMessage === 'string' && info.userMessage.length > 5, `userMessage for ${code} must not be empty`);
-    assert.ok(info.moodName === '嚇到' || info.moodName === '已讀不回', `moodName for ${code} must match spec`);
+    assert.ok(info.moodName === '需要協助' || info.moodName === '暫無回應', `moodName for ${code} must match Tidal Calm spec`);
     assert.ok(info.heroState === 'scared' || info.heroState === 'ignored', `heroState for ${code} must match spec`);
+    assert.doesNotMatch(info.userMessage, /勇者|惡龍|嚇到|已讀不回|找惡龍|Pip|老大|小弟/, `userMessage for ${code} must not contain RPG terms`);
     assert.equal(typeof info.retryable, 'boolean');
 
-    // Timeout codes have moodName '已讀不回' and heroState 'ignored'
+    // Timeout codes have moodName '暫無回應' and heroState 'ignored'
     if (code === 'TIMEOUT_IDLE' || code === 'TIMEOUT_TOTAL') {
-      assert.equal(info.moodName, '已讀不回');
+      assert.equal(info.moodName, '暫無回應');
       assert.equal(info.heroState, 'ignored');
     } else {
-      assert.equal(info.moodName, '嚇到');
+      assert.equal(info.moodName, '需要協助');
       assert.equal(info.heroState, 'scared');
     }
   }

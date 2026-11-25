@@ -1,7 +1,9 @@
 // src/popup/view-state.ts
 // Pure, display-only view model for T2 (sending / waiting). Reads Talk fields; never changes timeouts or phases.
-import type { FailureCode, Talk, TalkHandoff } from '../shared/types.ts';
+import type { FailureCode, LogEntry, Talk, TalkHandoff } from '../shared/types.ts';
 import { getFailureInfo } from '../shared/failures.ts';
+import { computeStats } from '../shared/stats.ts';
+import { validateBroChatUrl } from '../shared/validate.ts';
 
 // Mirrors tick.ts (TOTAL_TIMEOUT_MS / IDLE_TIMEOUT_MS) for display only.
 export const HUD_PATIENCE_TOTAL_MS = 180_000;
@@ -38,7 +40,7 @@ export function sendViewOf(talk: Talk | null): SendView {
   const none: SendView = { kind: 'none', readReceipt: false, sentAt: null, narration: '', typing: false };
   if (!talk) return none;
   if (SENDING_PHASES.includes(talk.phase)) {
-    return { kind: 'sending', readReceipt: false, sentAt: null, narration: '勇者 把訊息傳給惡龍……', typing: false };
+    return { kind: 'sending', readReceipt: false, sentAt: null, narration: '傳送中', typing: false };
   }
   if (WAITING_PHASES.includes(talk.phase)) {
     const hasSent = typeof talk.sentAt === 'number';
@@ -46,7 +48,7 @@ export function sendViewOf(talk: Talk | null): SendView {
       kind: 'reading',
       readReceipt: hasSent,
       sentAt: hasSent ? (talk.sentAt as number) : null,
-      narration: '惡龍 正在詠唱咒文……',
+      narration: 'Bro 正在回覆',
       typing: true
     };
   }
@@ -83,7 +85,7 @@ export function formatSentTime(sentAt: number): string {
 }
 
 export interface FailureView {
-  /** RPG narration shown above (never replacing) userMessage. */
+  /** Calm status chip label shown above (never replacing) userMessage. */
   narration: string;
   userMessage: string;
   badge: string;
@@ -91,20 +93,20 @@ export interface FailureView {
   handoffLine: string | null;
 }
 
-export const CLIPBOARD_COPIED_LINE = '勇者 使用了 剪貼簿！訊息已經複製。';
-export const CLIPBOARD_NOT_COPIED_LINE = '已切換至惡龍分頁（剪貼簿未寫入，內容保留在輸入框）。';
+export const CLIPBOARD_COPIED_LINE = '已將 Talk 內容複製到剪貼簿。';
+export const CLIPBOARD_NOT_COPIED_LINE = '已切換至 Bro Chat 分頁（剪貼簿未寫入，內容保留在輸入框）。';
 
 export function failureNarrationOf(code: FailureCode): string {
   switch (code) {
     case 'TIMEOUT_IDLE':
     case 'TIMEOUT_TOTAL':
-      return '惡龍 已讀不回……';
+      return 'Bro 暫無回應';
     case 'QUOTA_EXHAUSTED':
-      return '惡龍今天見客太多。';
+      return 'Bro Chat 額度已滿';
     case 'NOT_SIGNED_IN':
-      return '勇者還沒登入，進不了城。';
+      return '需要登入 Google';
     default:
-      return '惡龍 無視了勇者……';
+      return '需要你的協助';
   }
 }
 
@@ -129,7 +131,7 @@ export interface PreviousSummary {
 
 export const PREVIOUS_TEXT_MAX_CHARS = 40;
 
-/** T5: builds the in-memory 冒險之書 summary from the Talk being replaced; null when there is no previous Talk. */
+/** T5: builds the in-memory 前次 Talk summary from the Talk being replaced; null when there is no previous Talk. */
 export function previousSummaryOf(prev: Talk | null | undefined): PreviousSummary | null {
   if (!prev || typeof prev.text !== 'string' || prev.text.trim().length === 0) return null;
   const lines = (prev.answerMarkdown ?? '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 3);
@@ -176,4 +178,53 @@ export function isTalkBusy(talk: Talk | null | undefined): boolean {
 /** #50: focus moves to the input only on a busy-to-terminal transition seen in this popup. */
 export function shouldFocusInput(wasBusy: boolean, next: Talk | null): boolean {
   return draftActionOf(wasBusy, next) === 'clear';
+}
+
+export interface SettingsStatsView {
+  sentInRate: string;
+  readBackRate: string;
+  total: number;
+}
+
+/** Formats Talk Log reliability metrics for the embedded settings and options views. */
+export function statsViewOf(logByTalkId: Record<string, LogEntry> | null | undefined): SettingsStatsView {
+  const stats = computeStats(logByTalkId ?? {});
+  return {
+    sentInRate: stats.formattedSentInRate,
+    readBackRate: stats.formattedReadBackRate,
+    total: stats.total
+  };
+}
+
+export interface SettingsUrlFeedback {
+  valid: boolean;
+  message: string;
+  normalizedUrl?: string;
+  tone: 'info' | 'success' | 'error';
+}
+
+/** Real-time URL validation feedback for input typing (empty input stays neutral). */
+export function settingsUrlFeedbackOf(rawUrl: string): SettingsUrlFeedback {
+  if (rawUrl.trim().length === 0) {
+    return { valid: false, message: '', tone: 'info' };
+  }
+  return settingsSaveFeedbackOf(rawUrl);
+}
+
+/** Submit-time URL validation feedback (empty input reports an error). */
+export function settingsSaveFeedbackOf(rawUrl: string): SettingsUrlFeedback {
+  const res = validateBroChatUrl(rawUrl);
+  if (!res.valid || !res.normalizedUrl) {
+    return {
+      valid: false,
+      message: res.message || '無效的 URL',
+      tone: 'error'
+    };
+  }
+  return {
+    valid: true,
+    message: `格式正確 · Chat ID: ${res.ref?.chatId ?? ''}`,
+    normalizedUrl: res.normalizedUrl,
+    tone: 'success'
+  };
 }

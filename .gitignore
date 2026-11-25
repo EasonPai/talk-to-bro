@@ -5,6 +5,12 @@ coverage/
 .worktrees/
 .DS_Store
 *.log
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/manifest.json
+graphify-out/cache/
+graphify-out/*.sig
+graphify-out/.graphify_*.json
 
 # Skill Manager managed agent skills symlinks/targets (machine-specific)
 .agents/skills/*

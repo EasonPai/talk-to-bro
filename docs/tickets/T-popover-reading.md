@@ -2,6 +2,8 @@
 id: T-popover-reading
 milestone: popup-reading
 weight: 1
+status: done
+retries: 1
 ---
 
 # Popover 原地加寬與閱讀模式

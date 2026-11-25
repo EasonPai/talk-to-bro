@@ -63,6 +63,8 @@ npm test
 
 ## 相關文件與外部連結
 
+- **SDD 導航入口**：[索引與主題路由](docs/sdd/README.md) · [系統總覽](docs/sdd/overview.md)（沿用既有規格，不重複全文）
+
 - **送出單字後的生命週期與失敗退路**：[流程圖與實作筆記](docs/knowledge/2026-11-02-word-submission-lifecycle.md)
 - **產品需求規格書 (PRD)**：[`docs/prd/2026-10-28-talk-to-bro-personally-prd.md`](docs/prd/2026-10-28-talk-to-bro-personally-prd.md)
   - 雲端 Notion 來源：[Notion PRD v1.1](https://app.notion.com/p/3c20e8c693da42eeb1e9436942b79aef)

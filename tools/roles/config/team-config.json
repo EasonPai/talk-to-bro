@@ -1,17 +1,17 @@
 {
-  "effectiveConfigDigest": "486cbec88372ccf13c919dc2dc62928609c47a2c2d802b3ee578dbde1ff85623",
+  "effectiveConfigDigest": "a3b95bb35ca57aaa253bd8610c7349cd6f3891b206d5642e29f80c16adb08e7e",
   "enabled": true,
   "modules": {
     "messaging": "procedural",
     "roleIdentity": true,
     "taskContinuity": "procedural"
   },
-  "policyRevision": "2026-11-02.1",
+  "policyRevision": "2026-11-02.2",
   "profileId": "baseline-v1",
   "profileVersion": 1,
   "schemaVersion": 1,
   "skillVersion": "0.6.2-dev",
-  "sourceCommit": "86f8186739471625f3f3df460cac64426a716953",
-  "sourceDirty": false,
-  "sourceTreeDigest": "042eeb3abd834aec81b9d20ee4bfcd3f03f3b5c2dae032f6878d91eb639e50ec"
+  "sourceCommit": "7d8da3c5c86eecf0275c86c74f82117243847277",
+  "sourceDirty": true,
+  "sourceTreeDigest": "c914ffcdb0851f8dd47285b4d843b7a6a23122f70f12db859a49ecff25f6222e"
 }

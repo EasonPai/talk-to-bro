@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ep-agentic-orca-team hook shim (managed file). Finds team-setup.py and forwards one CLI hook event.
+"""ep-system-manage-team hook shim (managed file). Finds team-setup.py and forwards one CLI hook event.
 
 No-op ({}) when the skill cannot be found, so a missing install never breaks a session.
 """
@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-SKILL = 'ep-agentic-orca-team/scripts/team-setup.py'
+SKILL = 'ep-system-manage-team/scripts/team-setup.py'
 DIRS = ('.agents/skills', '.claude/skills', '.copilot/skills', '.codex/skills', '.gemini/skills',
         '.gemini/antigravity/skills')
 

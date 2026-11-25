@@ -160,11 +160,11 @@ try {
         p2.close(); await fetch(`${BASE}/json/close/${again.id}`);
       }
     }
-    const NARR = '惡龍 已讀不回……', MSG = '惡龍 30 秒沒出聲。';
+    const NARR = 'Bro 暫無回應', MSG = 'Bro 超過 30 秒沒有新回覆。';
     const f = report.failure;
-    const failOk = isFail && f.narration === NARR && f.errorVisible && f.message === MSG && f.badge === '已讀不回' && f.errorBottom <= f.footerTop + 0.5 && !report.pageScroll
+    const failOk = isFail && f.narration === NARR && f.errorVisible && f.message === MSG && f.badge === '暫無回應' && f.errorBottom <= f.footerTop + 0.5 && !report.pageScroll
       && (state === '4' ? f.handoffVisible && f.cancelVisible : state === '4-deferred' ? f.deferredVisible && f.gotoVisible
-        : state === '4-copied' ? f.handoffText === '勇者 使用了 剪貼簿！訊息已經複製。' : f.handoffText.includes('剪貼簿未寫入') && !f.handoffText.includes('訊息已經複製'));
+        : state === '4-copied' ? f.handoffText === '已將 Talk 內容複製到剪貼簿。' : f.handoffText.includes('剪貼簿未寫入') && !f.handoffText.includes('已將 Talk 內容複製'));
     const okState = isFail ? failOk : isDone
       ? report.answerVisible && report.sourceLine === 'SOURCE: TRUST ME BRO' && !report.gotoBroVisible && report.copyInView && report.inputInView && !report.pageScroll && report.answerClientHeight >= 30 && (state !== '3-long' || report.answerScrolls)
       : state === '2a' ? !report.receipt && !report.hud : report.receipt && report.hud && report.typing;

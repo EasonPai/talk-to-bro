@@ -28,13 +28,14 @@
     "supervisorPollingAllowed": false,
     "titleIsAuthority": false
   },
-  "revision": "2026-11-02.1",
+  "revision": "2026-11-02.2",
   "roles": {
     "Architect": {
       "assignmentPolicy": {
         "allowedAssigners": [
           "human",
-          "CEO"
+          "CEO",
+          "PM"
         ]
       },
       "reportsTo": "human",
