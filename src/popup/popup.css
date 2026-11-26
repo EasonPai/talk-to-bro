@@ -517,6 +517,12 @@ body:not([data-phase="idle"]) #empty-card { display: none; }
   margin: 10px 0;
 }
 .answer-content :is(h1, h2, h3, h4, h5, h6) { margin: 1.1em 0 0.4em; color: var(--ink); font-family: var(--font-serif); font-weight: 600; line-height: 1.35; }
+.answer-content h1 { font-size: 1.6em; }
+.answer-content h2 { font-size: 1.4em; }
+.answer-content h3 { font-size: 1.25em; }
+.answer-content h4 { font-size: 1.18em; }
+.answer-content h5 { font-size: 1.05em; }
+.answer-content h6 { font-size: 1.18em; }
 .answer-content pre { background: var(--surface-2); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 12px 0; }
 .answer-content code { background: var(--surface-2); padding: 2px 4px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; color: var(--sea); }
 .answer-content pre code { background: transparent; padding: 0; color: inherit; }
@@ -837,13 +843,24 @@ html[data-host="sidepanel"] .popup-main {
 .speakable-word {
   cursor: pointer;
   border-radius: 4px;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: inherit;
+  display: inline-block;
+  transition: background-color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+:not(:is(h1, h2, h3, h4, h5, h6)) > .speakable-word,
+p .speakable-word,
+li .speakable-word,
+td .speakable-word {
   font-family: var(--font-serif);
-  font-size: 1.17em;
+  font-size: 1.15em;
   font-weight: 600;
   line-height: 1.35;
   color: var(--ink);
-  display: inline-block;
-  transition: background-color 0.15s ease, text-decoration-color 0.15s ease;
 }
 
 .speakable-word:hover {

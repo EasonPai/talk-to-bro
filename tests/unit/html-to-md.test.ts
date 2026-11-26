@@ -81,3 +81,9 @@ test('HTML to Markdown - Regression: literal asterisks, underscores, and metacha
   const actualUnderscore = htmlToMarkdown('<p>literal _underscore_</p>');
   assert.equal(actualUnderscore, 'literal \\_underscore\\_');
 });
+
+test('HTML to Markdown - converts Gemini h6 dictionary section headings to h4 level', () => {
+  const html = '<h6 dir="ltr" data-path-to-node="0">contradictory</h6><h6 dir="ltr" data-path-to-node="1">核心語義</h6>';
+  const actual = htmlToMarkdown(html);
+  assert.equal(actual, '#### contradictory\n\n#### 核心語義');
+});

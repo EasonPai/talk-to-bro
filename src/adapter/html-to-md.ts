@@ -81,6 +81,15 @@ export function createTurndownInstance(): TurndownService {
     }
   });
 
+  // Custom rule: Map h6 to h4 (Gemini DOM outputs h6 for dictionary sections, which renders too small by default)
+  turndown.addRule('geminiH6ToH4', {
+    filter: 'h6',
+    replacement: (content) => {
+      const clean = content.trim();
+      return clean ? '\n\n#### ' + clean + '\n\n' : '';
+    }
+  });
+
   // Custom rule: sup element preservation with unescaped bracket indicators
   turndown.addRule('sup', {
     filter: 'sup',
