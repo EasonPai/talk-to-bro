@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Talk To Bro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Chrome MV3 Extension for Talk To Bro",
   "minimum_chrome_version": "141",
   "permissions": [

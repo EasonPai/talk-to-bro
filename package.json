@@ -1,6 +1,6 @@
 {
   "name": "talk-to-bro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Chrome MV3 Extension for Talk To Bro",
   "type": "module",
   "engines": {
