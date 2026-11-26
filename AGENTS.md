@@ -21,7 +21,12 @@ Welcome to **Talk To Bro** (`talk-to-bro`). This document serves as the Single S
 ### 運行環境要求
 - **Node.js >= 22**（專案以 `.nvmrc` 指定，`pretest` 會強制檢查 `node >= 22`）。
 - **套件管理**：使用 `npm`。
-- **版本同步**：本倉庫所有更改（含程式碼、設定與文件）皆須同步更新版本號，並保持 `package.json`、`package-lock.json`（頂層與根套件）及 `manifest.json` 的版本一致。
+- **語意化版本推進 (SemVer) 與版本同步**：
+  - 本專案一律嚴格遵循**語意化版本（Semantic Versioning, SemVer - `MAJOR.MINOR.PATCH`）**原則推進版本號：
+    - **PATCH**（修補，如 `1.0.0` -> `1.0.1`）：向下相容的 Bug 修復、微小樣式/排版調整或小改進。
+    - **MINOR**（次版，如 `1.0.1` -> `1.1.0`）：向下相容的新功能新增、增強特性（Enhancements）或架構升級。
+    - **MAJOR**（主版，如 `1.1.0` -> `2.0.0`）：破壞性變更（Breaking Changes）或重大架構重構。
+  - **同步三方版本**：任何推進版本號的操作，皆須同步保持 `package.json`、`package-lock.json`（頂層與根套件）及 `manifest.json` 的版本一致，並於變更時更新建置產物（`dist/manifest.json`）。
 
 ### 常用命令
 ```bash
