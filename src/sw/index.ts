@@ -6,6 +6,7 @@ import { getRuntimeStorage, saveRuntimeStorage, getSettingsStorage, getUiStorage
 import { computeStats } from '../shared/stats.ts';
 import { RealBroAdapter } from './adapter-real.ts';
 import { performHandoff } from './handoff.ts';
+import { provisionNotebookChat } from './notebook-onboarding.ts';
 import type { Talk, UiState } from '../shared/types.ts';
 
 import { UiQueue, syncActionRouting, reconcileUiOnBoot } from './ui-state.ts';
@@ -45,7 +46,15 @@ const runner = new TalkRunner({
   storageSession: chrome.storage?.session,
   adapter: realAdapter,
   alarms: chrome.alarms,
-  fastTimers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as any) }
+  fastTimers: { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as any) },
+  onAutoProvision: (seedText) =>
+    provisionNotebookChat(
+      {
+        storageLocal: chrome.storage?.local,
+        storageSession: chrome.storage?.session
+      },
+      seedText
+    )
 });
 
 // Single entry boot
