@@ -28,6 +28,7 @@ import { performHandoff, continueHandoffAfterPopupClose } from './handoff.ts';
 import { getFailureInfo } from '../shared/failures.ts';
 import type { DebugV1Storage } from '../shared/types.ts';
 import type { TabsApiLike } from './tab.ts';
+import { CONSECUTIVE_FAILURE_THRESHOLD } from './notebook-onboarding.ts';
 
 export interface AlarmsLike {
   create(name: string, alarmInfo: { periodInMinutes?: number; delayInMinutes?: number }): void;
@@ -52,6 +53,7 @@ export interface RunnerDeps {
   windowsApi?: any;
   runtimeApi?: any;
   offscreenApi?: any;
+  onAutoProvision?: (seedText: string) => Promise<{ ok: boolean; broChatUrl?: string }>;
 }
 
 export class SerializedMutex {
@@ -79,6 +81,8 @@ export class TalkRunner {
   private fastHandle: unknown = null;
   private fastTalkId: string | null = null;
   private tickInFlight = false;
+  private onAutoProvision?: (seedText: string) => Promise<{ ok: boolean; broChatUrl?: string }>;
+  private consecutiveFailures = 0;
 
   constructor(deps: RunnerDeps) {
     this.fastTimers = deps.fastTimers;
@@ -91,6 +95,7 @@ export class TalkRunner {
     this.windowsApi = deps.windowsApi;
     this.runtimeApi = deps.runtimeApi;
     this.offscreenApi = deps.offscreenApi;
+    this.onAutoProvision = deps.onAutoProvision;
   }
 
   now(): number {
@@ -101,6 +106,18 @@ export class TalkRunner {
     let failedTalk = transition(talk, { type: 'FAIL', code, maybeSent }, now);
     await finalizeTerminalTalk(this.storageLocal, failedTalk, now);
     this.alarms?.clear('ttb-watchdog');
+
+    this.consecutiveFailures += 1;
+    if (
+      code !== 'NO_BRO_CHAT' &&
+      this.consecutiveFailures >= CONSECUTIVE_FAILURE_THRESHOLD &&
+      this.onAutoProvision
+    ) {
+      this.consecutiveFailures = 0;
+      this.onAutoProvision(talk.text).catch((err) =>
+        console.warn('[TalkRunner] Auto-provision on consecutive failures error:', err)
+      );
+    }
 
     const handoffDeps = {
       storageLocal: this.storageLocal,
@@ -170,9 +187,18 @@ export class TalkRunner {
 
       const settings = await getSettingsStorage(this.storageLocal);
       if (!settings?.broChatUrl) {
-        let talk = createTalk(text, now);
-        const failedTalk = await this.handleFailure(talk, 'NO_BRO_CHAT', now);
-        return { accepted: true, talk: failedTalk };
+        if (this.onAutoProvision) {
+          const provisioned = await this.onAutoProvision(text).catch(() => ({ ok: false }));
+          if (!provisioned.ok) {
+            let talk = createTalk(text, now);
+            const failedTalk = await this.handleFailure(talk, 'NO_BRO_CHAT', now);
+            return { accepted: true, talk: failedTalk };
+          }
+        } else {
+          let talk = createTalk(text, now);
+          const failedTalk = await this.handleFailure(talk, 'NO_BRO_CHAT', now);
+          return { accepted: true, talk: failedTalk };
+        }
       }
 
       let talk = createTalk(text, now);
